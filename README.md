@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" width="160" alt="rterm">
+</p>
+
 # rterm
 
 A Mac app that supervises detachable terminal sessions. It is not a general local-shell terminal.
