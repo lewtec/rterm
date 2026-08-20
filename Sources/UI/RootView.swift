@@ -183,6 +183,7 @@ struct RootView: View {
         if store.places.isEmpty {
             emptyCatalog
         } else {
+            GeometryReader { geo in
             ZStack {
                 ForEach(store.places) { place in
                     if store.hasPane(place.id) {
@@ -195,6 +196,7 @@ struct RootView: View {
                             }
                         )
                         .id("\(place.id.uuidString)-\(epoch)")
+                        .frame(width: geo.size.width, height: geo.size.height)
                         .opacity(store.selectedID == place.id ? 1 : 0)
                         .allowsHitTesting(store.selectedID == place.id)
                     }
@@ -222,6 +224,9 @@ struct RootView: View {
                     }
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

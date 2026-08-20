@@ -1,4 +1,5 @@
 import AppKit
+import SwiftTerm
 import SwiftUI
 
 /// System fullscreen lives in a Space and never includes the camera strip.
@@ -237,7 +238,7 @@ final class WindowChrome: NSObject, ObservableObject {
     }
 
     private static func isTerminal(_ view: NSView) -> Bool {
-        String(describing: type(of: view)).contains("LocalProcessTerminalView")
+        view is LocalProcessTerminalView
     }
 
     private func refreshGeometry(from window: NSWindow) {
