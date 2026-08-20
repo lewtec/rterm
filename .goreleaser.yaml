@@ -7,8 +7,13 @@
 version: 2
 project_name: rterm
 
+# skip+non-go: goreleaser still defaults builder to go, then runs `go list -m`.
 builds:
   - skip: true
+    builder: rust
+
+archives:
+  - formats: [none]
 
 checksum:
   name_template: checksums.txt
