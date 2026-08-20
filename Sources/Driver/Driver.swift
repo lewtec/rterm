@@ -13,7 +13,7 @@ enum Driver {
         var currentDirectory: String?
     }
 
-    static func launch(for place: Place) -> Launch {
+    static func launch(for place: Place, verboseLog: String? = nil) -> Launch {
         if place.isLocal {
             return Launch(
                 executable: localShell,
@@ -23,7 +23,7 @@ enum Driver {
         }
         return Launch(
             executable: sshExecutable,
-            arguments: sshArguments(for: place),
+            arguments: sshArguments(for: place, verboseLog: verboseLog),
             currentDirectory: nil
         )
     }
@@ -75,16 +75,20 @@ enum Driver {
     static let serverAliveInterval = 5
     static let serverAliveCountMax = 2
 
-    static func sshArguments(for place: Place) -> [String] {
+    static func sshArguments(for place: Place, verboseLog: String? = nil) -> [String] {
         let target = sshTarget(for: place)
         let wrapped = "exec \"$SHELL\" -lc \(shellSingleQuote(remoteCommand(for: place)))"
-        return [
-            "-t",
+        var arguments = ["-t"]
+        if let verboseLog {
+            arguments += ["-v", "-E", verboseLog]
+        }
+        arguments += [
             "-o", "ServerAliveInterval=\(serverAliveInterval)",
             "-o", "ServerAliveCountMax=\(serverAliveCountMax)",
             target,
             wrapped,
         ]
+        return arguments
     }
 
     static func shellSingleQuote(_ value: String) -> String {

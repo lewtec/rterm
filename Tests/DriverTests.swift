@@ -59,6 +59,19 @@ final class DriverTests: XCTestCase {
         XCTAssertEqual(launch.arguments[5], "ada@riverwood")
     }
 
+    func testRemoteVerboseLogUsesDashE() {
+        let place = Place(user: "ada", host: "whiterun", backend: .herdr)
+        let path = "/tmp/rterm-ssh.log"
+        XCTAssertEqual(
+            Array(Driver.sshArguments(for: place, verboseLog: path).prefix(4)),
+            ["-t", "-v", "-E", path]
+        )
+        XCTAssertEqual(
+            Driver.launch(for: place).arguments.prefix(2),
+            ["-t", "-o"]
+        )
+    }
+
     func testLocalhostIsLocalNotUserAtLocalhost() {
         let place = Place(user: "ada", host: "localhost", backend: .herdr)
         XCTAssertTrue(place.isLocal)
