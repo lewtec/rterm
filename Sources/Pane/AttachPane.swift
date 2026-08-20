@@ -14,7 +14,11 @@ struct AttachPane: NSViewRepresentable {
         let view = LocalProcessTerminalView(frame: .zero)
         view.processDelegate = context.coordinator
         let launch = Driver.launch(for: place)
-        view.startProcess(executable: launch.executable, args: launch.arguments)
+        view.startProcess(
+            executable: launch.executable,
+            args: launch.arguments,
+            currentDirectory: launch.currentDirectory
+        )
         return view
     }
 

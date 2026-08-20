@@ -44,6 +44,7 @@ final class DriverTests: XCTestCase {
         let launch = Driver.launch(for: place)
         XCTAssertEqual(launch.executable, Driver.localShell)
         XCTAssertEqual(launch.arguments, ["-lc", Driver.herdrAttachScript])
+        XCTAssertEqual(launch.currentDirectory, NSHomeDirectory())
         XCTAssertEqual(place.displayLabel, "\(NSUserName())@localhost")
     }
 

@@ -84,7 +84,7 @@ Reconnect runs the same attach path as the first attach.
 
 ## Attach
 
-If host is empty, attach is local. Run the driver command in a login shell so `PATH` matches the user's shell:
+If host is empty, attach is local. Start the process in the user's home directory, not `/`. Run the driver command in a login shell so `PATH` matches the user's shell:
 
 ```text
 $SHELL -lc '<driver-command>'

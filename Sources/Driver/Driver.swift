@@ -10,13 +10,22 @@ enum Driver {
     struct Launch: Equatable {
         var executable: String
         var arguments: [String]
+        var currentDirectory: String?
     }
 
     static func launch(for place: Place) -> Launch {
         if place.isLocal {
-            return Launch(executable: localShell, arguments: ["-lc", remoteCommand(for: place)])
+            return Launch(
+                executable: localShell,
+                arguments: ["-lc", remoteCommand(for: place)],
+                currentDirectory: NSHomeDirectory()
+            )
         }
-        return Launch(executable: sshExecutable, arguments: sshArguments(for: place))
+        return Launch(
+            executable: sshExecutable,
+            arguments: sshArguments(for: place),
+            currentDirectory: nil
+        )
     }
 
     static func sshTarget(for place: Place) -> String {
