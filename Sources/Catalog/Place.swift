@@ -46,25 +46,15 @@ struct Place: Identifiable, Hashable {
         if let label, !label.isEmpty {
             return label
         }
-        if isLocal {
-            let prefix = user.trimmingCharacters(in: .whitespacesAndNewlines)
-            let head = prefix.isEmpty ? "local" : prefix
-            switch backend {
-            case .herdr:
-                return "\(head):herdr"
-            case .tmux:
-                return "\(head):tmux(\(session ?? ""))"
-            case .screen:
-                return "\(head):screen(\(session ?? ""))"
-            }
-        }
+        let shownHost = isLocal ? "localhost" : host
+        let core = user.isEmpty ? shownHost : "\(user)@\(shownHost)"
         switch backend {
         case .herdr:
-            return "\(user)@\(host)"
+            return core
         case .tmux:
-            return "\(user)@\(host):tmux(\(session ?? ""))"
+            return "\(core):tmux(\(session ?? ""))"
         case .screen:
-            return "\(user)@\(host):screen(\(session ?? ""))"
+            return "\(core):screen(\(session ?? ""))"
         }
     }
 }
