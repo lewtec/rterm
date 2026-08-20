@@ -2,17 +2,17 @@ import XCTest
 @testable import rterm
 
 final class DriverTests: XCTestCase {
-    func testHerdrUsesLoginShellOverSSH() {
-        let place = Place(user: "ada", host: "riverwood", backend: .herdr)
-        XCTAssertEqual(Driver.sshExecutable, "/usr/bin/ssh")
+    func testRemoteTmuxUsesSSHKeepalives() {
+        let place = Place(user: "ada", host: "whiterun", backend: .tmux, session: "foo")
+        XCTAssertEqual(Driver.launch(for: place).executable, Driver.sshExecutable)
         XCTAssertEqual(
             Driver.sshArguments(for: place),
             [
                 "-t",
                 "-o", "ServerAliveInterval=5",
                 "-o", "ServerAliveCountMax=2",
-                "ada@riverwood",
-                "exec \"$SHELL\" -lc 'herdr'",
+                "ada@whiterun",
+                "exec \"$SHELL\" -lc 'tmux new-session -A -s '\\''foo'\\'''",
             ]
         )
     }
@@ -45,6 +45,13 @@ final class DriverTests: XCTestCase {
         XCTAssertEqual(launch.executable, Driver.localShell)
         XCTAssertEqual(launch.arguments, ["-lc", "herdr"])
         XCTAssertEqual(place.displayLabel, "herdr")
+    }
+
+    func testRemoteHerdrUsesLocalClient() {
+        let place = Place(user: "ada", host: "riverwood", backend: .herdr)
+        let launch = Driver.launch(for: place)
+        XCTAssertEqual(launch.executable, Driver.localShell)
+        XCTAssertEqual(launch.arguments, ["-lc", "herdr --remote 'ada@riverwood'"])
     }
 
     func testEmptyHostTmuxLabel() {

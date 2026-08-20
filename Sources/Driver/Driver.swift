@@ -13,16 +13,33 @@ enum Driver {
     }
 
     static func launch(for place: Place) -> Launch {
+        if place.backend == .herdr {
+            return Launch(executable: localShell, arguments: ["-lc", herdrCommand(for: place)])
+        }
         if place.isLocal {
             return Launch(executable: localShell, arguments: ["-lc", remoteCommand(for: place)])
         }
         return Launch(executable: sshExecutable, arguments: sshArguments(for: place))
     }
 
+    static func herdrCommand(for place: Place) -> String {
+        if place.isLocal {
+            return "herdr"
+        }
+        return "herdr --remote \(shellSingleQuote(sshTarget(for: place)))"
+    }
+
+    static func sshTarget(for place: Place) -> String {
+        if place.user.isEmpty {
+            return place.host
+        }
+        return "\(place.user)@\(place.host)"
+    }
+
     static func remoteCommand(for place: Place) -> String {
         switch place.backend {
         case .herdr:
-            return "herdr"
+            return herdrCommand(for: place)
         case .tmux:
             return "tmux new-session -A -s \(shellSingleQuote(place.session ?? ""))"
         case .screen:
@@ -34,7 +51,7 @@ enum Driver {
     static let serverAliveCountMax = 2
 
     static func sshArguments(for place: Place) -> [String] {
-        let target = "\(place.user)@\(place.host)"
+        let target = sshTarget(for: place)
         let wrapped = "exec \"$SHELL\" -lc \(shellSingleQuote(remoteCommand(for: place)))"
         return [
             "-t",

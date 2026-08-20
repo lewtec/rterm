@@ -90,7 +90,15 @@ If host is empty, attach is local. Run the driver command in a login shell so `P
 $SHELL -lc '<driver-command>'
 ```
 
-If host is set, transport is SSH. Use `/usr/bin/ssh`. Do not use libssh. Do not use `herdr --remote`.
+If backend is `herdr` and host is set, attach with the local herdr client so you join that machine's herdr server:
+
+```text
+$SHELL -lc "herdr --remote 'user@host'"
+```
+
+Do not SSH and run a second `herdr` on the remote. That can start another server.
+
+If host is set and backend is `tmux` or `screen`, transport is SSH. Use `/usr/bin/ssh`. Do not use libssh.
 
 Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so the remote `PATH` is the user's login `PATH`:
 
