@@ -13,9 +13,11 @@ struct RootView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .navigation) {
                 tabStrip
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                addPlaceButton
             }
         }
         .sheet(isPresented: editorPresented) {
@@ -55,43 +57,40 @@ struct RootView: View {
     }
 
     private var tabStrip: some View {
-        HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(store.places) { place in
-                        PlaceTab(
-                            place: place,
-                            state: store.tabStates[place.id] ?? .idle,
-                            selected: store.selectedID == place.id
-                        )
-                        .onTapGesture {
-                            store.select(place.id)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                ForEach(store.places) { place in
+                    PlaceTab(
+                        place: place,
+                        state: store.tabStates[place.id] ?? .idle,
+                        selected: store.selectedID == place.id
+                    )
+                    .onTapGesture {
+                        store.select(place.id)
+                    }
+                    .contextMenu {
+                        Button("Reconnect") {
+                            store.reconnect(place.id)
                         }
-                        .contextMenu {
-                            Button("Reconnect") {
-                                store.reconnect(place.id)
-                            }
-                            Button("Edit…") {
-                                store.beginEdit(place)
-                            }
-                            Button("Delete", role: .destructive) {
-                                store.delete(place.id)
-                            }
+                        Button("Edit…") {
+                            store.beginEdit(place)
+                        }
+                        Button("Delete", role: .destructive) {
+                            store.delete(place.id)
                         }
                     }
                 }
-                .padding(.horizontal, 4)
             }
-            Button {
-                store.beginAdd()
-            } label: {
-                Image(systemName: "plus")
-                    .padding(8)
-            }
-            .buttonStyle(.plain)
-            .help("Add Place")
         }
-        .background(.bar)
+    }
+
+    private var addPlaceButton: some View {
+        Button {
+            store.beginAdd()
+        } label: {
+            Image(systemName: "plus")
+        }
+        .help("Add Place")
     }
 
     @ViewBuilder
