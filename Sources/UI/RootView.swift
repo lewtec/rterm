@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct RootView: View {
@@ -16,6 +17,12 @@ struct RootView: View {
         .sheet(isPresented: editorPresented) {
             PlaceEditorSheet()
                 .environmentObject(store)
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
+            store.dropAllConnections()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willPowerOffNotification)) { _ in
+            store.dropAllConnections()
         }
     }
 
@@ -102,6 +109,14 @@ struct RootView: View {
                         .id("\(place.id.uuidString)-\(epoch)")
                         .opacity(store.selectedID == place.id ? 1 : 0)
                         .allowsHitTesting(store.selectedID == place.id)
+                    }
+                }
+
+                if let place = store.selectedPlace, !store.hasPane(place.id) {
+                    ContentUnavailableView {
+                        Label("Idle", systemImage: "moon.zzz")
+                    } description: {
+                        Text("Click this tab or Reconnect to attach.")
                     }
                 }
 

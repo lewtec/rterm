@@ -45,6 +45,13 @@ final class AppStore: ObservableObject {
         reconnect(selectedID)
     }
 
+    func dropAllConnections() {
+        debugOverlay = false
+        for id in places.map(\.id) {
+            tabStates[id] = .idle
+        }
+    }
+
     func beginAdd() {
         editor = PlaceEditorState(
             originID: nil,

@@ -22,6 +22,10 @@ struct AttachPane: NSViewRepresentable {
         nsView.processDelegate = context.coordinator
     }
 
+    static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
+        nsView.terminate()
+    }
+
     final class Coordinator: LocalProcessTerminalViewDelegate {
         var onExit: (Int32?) -> Void
 

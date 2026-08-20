@@ -22,6 +22,7 @@
 		616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */; };
 		8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D918CE205CCF37284CC57 /* AppStore.swift */; };
 		90E55D7616C271F98D451669 /* CatalogIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD851CE8251960231DDA80C2 /* CatalogIO.swift */; };
+		9E2F750DB2A1567F5EE56FF2 /* AppStoreSleepTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F228290586DF8D0BED89FA6 /* AppStoreSleepTests.swift */; };
 		A8346612A479CF038F9373EA /* CatalogDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75902058234193BBD87886FC /* CatalogDocument.swift */; };
 		B59A5FC09D0E9E5289576DB7 /* RtermApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F304BAF27B86FA24B0F6217A /* RtermApp.swift */; };
 		D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */; };
@@ -44,6 +45,7 @@
 		2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExit.swift; sourceTree = "<group>"; };
 		58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = rtermTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogPaths.swift; sourceTree = "<group>"; };
+		6F228290586DF8D0BED89FA6 /* AppStoreSleepTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreSleepTests.swift; sourceTree = "<group>"; };
 		72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceEditorSheet.swift; sourceTree = "<group>"; };
 		75902058234193BBD87886FC /* CatalogDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDocument.swift; sourceTree = "<group>"; };
 		7F4691BEA6EC153186C7DDB2 /* Driver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Driver.swift; sourceTree = "<group>"; };
@@ -156,6 +158,7 @@
 		C83053AA64F54DBDEC1106B6 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				6F228290586DF8D0BED89FA6 /* AppStoreSleepTests.swift */,
 				844DA7142EB561906510A8DF /* AttachExitTests.swift */,
 				C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */,
 				1EBB72640D125653205D9483 /* DriverTests.swift */,
@@ -278,6 +281,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E2F750DB2A1567F5EE56FF2 /* AppStoreSleepTests.swift in Sources */,
 				2E0F2E61B6CB66A439A9C75A /* AttachExitTests.swift in Sources */,
 				DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */,
 				1860C8A1ED7272D4E5718DB9 /* DriverTests.swift in Sources */,
