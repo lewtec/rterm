@@ -1,0 +1,68 @@
+name: Autorelease
+
+on:
+  push:
+    branches:
+      - main
+    # Do not trigger on tags: release pushes a tag, which would re-enter this
+    # workflow and mint another version.
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      new_version:
+        description: 'New tag version'
+        type: choice
+        default: 'patch'
+        options:
+          - next
+          - patch
+          - minor
+          - major
+  schedule:
+    - cron: '0 2 * * 6' # saturday 2am
+
+jobs:
+  autorelease:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      # Full history + tags required: svu needs existing tags to bump correctly.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup git config
+        run: |
+          git config user.name actions-bot
+          git config user.email actions-bot@users.noreply.github.com
+
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+
+      - name: Setup Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -runFirstLaunch
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Install
+        run: mise run install
+
+      - name: CI
+        if: github.event_name != 'workflow_dispatch'
+        run: mise run ci
+
+      - name: Make release if everything looks right
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ github.event.inputs.new_version }}
+        run: |
+          set -euo pipefail
+          echo "Existing tags (top):"
+          git tag --sort=-v:refname | head -10 || true
+          echo "svu current=$(svu current 2>/dev/null || true) next=$(svu next) minor=$(svu minor) patch=$(svu patch)"
+          mise release "$NEW_VERSION"
