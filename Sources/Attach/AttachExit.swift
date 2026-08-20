@@ -9,7 +9,7 @@ enum AttachExit: Equatable {
         case nil:
             return .failed("process died")
         case let code?:
-            return .failed("ssh exited (\(code))")
+            return .failed("exited (\(code))")
         }
     }
 }

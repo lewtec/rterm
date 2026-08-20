@@ -39,20 +39,24 @@ v1 is a Mac app. Linux, Windows, Iced, and winit ports are out of scope. You may
 
 A place is:
 
-- user
-- host
+- user (required when host is set)
+- host (empty means this Mac)
 - backend: `herdr`, `tmux`, or `screen`
 - session name: required for `tmux` and `screen`; absent for `herdr`
 - label: optional
 
 herdr has no session name in rterm.
 
+An empty host is a local place. Attach runs the mux on this Mac. Do not use SSH.
+
 If the user leaves the label empty, the default is:
 
-- herdr: `user@host`
-- tmux or screen: `user@host:tmux(foo)` or `user@host:screen(foo)`
+- remote herdr: `user@host`
+- remote tmux or screen: `user@host:tmux(foo)` or `user@host:screen(foo)`
+- local herdr: `herdr`
+- local tmux or screen: `tmux(foo)` or `screen(foo)`
 
-Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`.
+Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local.
 
 Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id.
 
@@ -80,7 +84,13 @@ Reconnect runs the same attach path as the first attach.
 
 ## Attach
 
-Transport is always SSH. Use `/usr/bin/ssh`. Do not use libssh. Do not use `herdr --remote`.
+If host is empty, attach is local. Run the driver command in a login shell so `PATH` matches the user's shell:
+
+```text
+$SHELL -lc '<driver-command>'
+```
+
+If host is set, transport is SSH. Use `/usr/bin/ssh`. Do not use libssh. Do not use `herdr --remote`.
 
 Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so the remote `PATH` is the user's login `PATH`:
 
@@ -88,7 +98,7 @@ Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so th
 ssh -t user@host -- exec "$SHELL" -lc '<driver-command>'
 ```
 
-`$SHELL` is the remote user's shell as SSH resolves it. Do not hard-code bash or zsh.
+`$SHELL` is the user's shell (local or remote as SSH resolves it). Do not hard-code bash or zsh.
 
 Driver commands:
 

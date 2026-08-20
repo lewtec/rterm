@@ -24,9 +24,23 @@ struct Place: Identifiable, Hashable {
         self.label = label
     }
 
+    var isLocal: Bool {
+        host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var displayLabel: String {
         if let label, !label.isEmpty {
             return label
+        }
+        if isLocal {
+            switch backend {
+            case .herdr:
+                return "herdr"
+            case .tmux:
+                return "tmux(\(session ?? ""))"
+            case .screen:
+                return "screen(\(session ?? ""))"
+            }
         }
         switch backend {
         case .herdr:

@@ -8,8 +8,8 @@ struct PlaceEditorSheet: View {
             Text(store.editor?.originID == nil ? "Add Place" : "Edit Place")
                 .font(.title2)
             Form {
-                TextField("User", text: user)
-                TextField("Host", text: host)
+                TextField("User", text: user, prompt: Text("required if remote"))
+                TextField("Host", text: host, prompt: Text("empty = this Mac"))
                 Picker("Backend", selection: backend) {
                     ForEach(Backend.allCases) { value in
                         Text(value.rawValue).tag(value)
@@ -46,7 +46,7 @@ struct PlaceEditorSheet: View {
         guard let editor = store.editor else { return false }
         let user = editor.user.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = editor.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        if user.isEmpty || host.isEmpty {
+        if !host.isEmpty && user.isEmpty {
             return false
         }
         if editor.backend != .herdr

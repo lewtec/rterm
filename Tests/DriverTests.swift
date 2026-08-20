@@ -32,4 +32,19 @@ final class DriverTests: XCTestCase {
         let place = Place(user: "ada", host: "phone", backend: .screen, session: "foo")
         XCTAssertEqual(Driver.remoteCommand(for: place), "screen -d -R 'foo'")
     }
+
+    func testEmptyHostIsLocalLoginShell() {
+        let place = Place(user: "", host: "", backend: .herdr)
+        let launch = Driver.launch(for: place)
+        XCTAssertEqual(launch.executable, Driver.localShell)
+        XCTAssertEqual(launch.arguments, ["-lc", "herdr"])
+        XCTAssertEqual(place.displayLabel, "herdr")
+    }
+
+    func testEmptyHostTmuxLabel() {
+        let place = Place(user: "", host: "  ", backend: .tmux, session: "dev")
+        XCTAssertTrue(place.isLocal)
+        XCTAssertEqual(place.displayLabel, "tmux(dev)")
+        XCTAssertEqual(Driver.launch(for: place).arguments, ["-lc", "tmux new-session -A -s 'dev'"])
+    }
 }

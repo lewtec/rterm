@@ -110,8 +110,12 @@ enum CatalogCodec {
         for place in document.places {
             lines.append("[[place]]")
             lines.append("id = \(quote(place.id.uuidString))")
-            lines.append("user = \(quote(place.user))")
-            lines.append("host = \(quote(place.host))")
+            if !place.user.isEmpty {
+                lines.append("user = \(quote(place.user))")
+            }
+            if !place.host.isEmpty {
+                lines.append("host = \(quote(place.host))")
+            }
             lines.append("backend = \(quote(place.backend.rawValue))")
             if place.backend != .herdr, let session = place.session, !session.isEmpty {
                 lines.append("session = \(quote(session))")
@@ -183,9 +187,12 @@ private struct PartialPlace {
 
     func finish(startingAt line: Int) throws -> Place {
         guard let id else { throw CatalogCodecError.missingField("id", line) }
-        guard let user, !user.isEmpty else { throw CatalogCodecError.missingField("user", line) }
-        guard let host, !host.isEmpty else { throw CatalogCodecError.missingField("host", line) }
         guard let backend else { throw CatalogCodecError.missingField("backend", line) }
+        let trimmedHost = (host ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedUser = (user ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHost.isEmpty && trimmedUser.isEmpty {
+            throw CatalogCodecError.missingField("user", line)
+        }
         let trimmedSession = session?.trimmingCharacters(in: .whitespacesAndNewlines)
         if backend != .herdr && (trimmedSession == nil || trimmedSession?.isEmpty == true) {
             throw CatalogCodecError.sessionRequired(line)
@@ -193,8 +200,8 @@ private struct PartialPlace {
         let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines)
         return Place(
             id: id,
-            user: user,
-            host: host,
+            user: trimmedUser,
+            host: trimmedHost,
             backend: backend,
             session: backend == .herdr ? nil : trimmedSession,
             label: (trimmedLabel?.isEmpty == false) ? trimmedLabel : nil

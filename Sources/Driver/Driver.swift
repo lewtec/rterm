@@ -1,5 +1,23 @@
+import Foundation
+
 enum Driver {
     static let sshExecutable = "/usr/bin/ssh"
+
+    static var localShell: String {
+        ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+    }
+
+    struct Launch: Equatable {
+        var executable: String
+        var arguments: [String]
+    }
+
+    static func launch(for place: Place) -> Launch {
+        if place.isLocal {
+            return Launch(executable: localShell, arguments: ["-lc", remoteCommand(for: place)])
+        }
+        return Launch(executable: sshExecutable, arguments: sshArguments(for: place))
+    }
 
     static func remoteCommand(for place: Place) -> String {
         switch place.backend {

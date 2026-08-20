@@ -13,7 +13,8 @@ struct AttachPane: NSViewRepresentable {
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let view = LocalProcessTerminalView(frame: .zero)
         view.processDelegate = context.coordinator
-        view.startProcess(executable: Driver.sshExecutable, args: Driver.sshArguments(for: place))
+        let launch = Driver.launch(for: place)
+        view.startProcess(executable: launch.executable, args: launch.arguments)
         return view
     }
 

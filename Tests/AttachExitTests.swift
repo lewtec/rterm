@@ -8,6 +8,6 @@ final class AttachExitTests: XCTestCase {
 
     func testNilAndNonZeroAreFailures() {
         XCTAssertEqual(AttachExit.classify(nil), .failed("process died"))
-        XCTAssertEqual(AttachExit.classify(255), .failed("ssh exited (255)"))
+        XCTAssertEqual(AttachExit.classify(255), .failed("exited (255)"))
     }
 }
