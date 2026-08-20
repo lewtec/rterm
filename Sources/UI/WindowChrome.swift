@@ -32,6 +32,28 @@ final class WindowChrome: NSObject, ObservableObject {
         installCollectionBehavior(on: window)
         installZoomHook(on: window)
         installKeyMonitor()
+        if !isFillScreen {
+            applyWindowedTitlebar(on: window)
+        }
+    }
+
+    private func applyWindowedTitlebar(on window: NSWindow?) {
+        guard let window else {
+            return
+        }
+        var mask = window.styleMask
+        mask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
+        if window.styleMask != mask {
+            window.styleMask = mask
+        }
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.title = ""
+        window.toolbar = nil
+        window.toolbarStyle = .unifiedCompact
+        DispatchQueue.main.async { [weak self] in
+            self?.objectWillChange.send()
+        }
     }
 
     func handleScreenChange(of window: NSWindow?) {
@@ -109,6 +131,7 @@ final class WindowChrome: NSObject, ObservableObject {
             window.backgroundColor = savedBackground
         }
         window.setFrame(savedFrame, display: true)
+        applyWindowedTitlebar(on: window)
         installZoomHook(on: window)
         clearGeometry()
         focusTerminal(in: window)

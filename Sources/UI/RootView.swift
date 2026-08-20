@@ -7,9 +7,7 @@ struct RootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if chrome.splitActive {
-                notchRow
-            }
+            chromeRow
             if let catalogError = store.catalogError {
                 catalogBanner(catalogError)
             }
@@ -17,13 +15,8 @@ struct RootView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .background(WindowChromeReader(chrome: chrome))
-        .ignoresSafeArea(.container, edges: chrome.splitActive ? .top : [])
-        .toolbar(chrome.splitActive ? .hidden : .automatic)
-        .toolbar {
-            if !chrome.splitActive {
-                toolbarContent
-            }
-        }
+        .ignoresSafeArea(.container, edges: .top)
+        .toolbar(.hidden)
         .sheet(isPresented: editorPresented) {
             PlaceEditorSheet()
                 .environmentObject(store)
@@ -63,27 +56,35 @@ struct RootView: View {
         .background(Color.orange.opacity(0.25))
     }
 
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        if #available(macOS 26.0, *) {
-            ToolbarItem(placement: .navigation) {
-                tabStrip(store.places)
-                    .buttonStyle(.plain)
-            }
-            .sharedBackgroundVisibility(.hidden)
-            ToolbarSpacer(.flexible)
-            ToolbarItem(placement: .primaryAction) {
-                addPlaceButton
-            }
-            .sharedBackgroundVisibility(.hidden)
+    @ViewBuilder
+    private var chromeRow: some View {
+        if chrome.splitActive {
+            notchRow
         } else {
-            ToolbarItem(placement: .navigation) {
+            windowedRow
+        }
+    }
+
+    private var windowedRow: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            WindowDragRegion()
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: WindowChrome.trafficLightWidth)
+                    .allowsHitTesting(false)
                 tabStrip(store.places)
-                    .buttonStyle(.plain)
-            }
-            ToolbarItem(placement: .primaryAction) {
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 addPlaceButton
+                    .padding(.trailing, 8)
             }
+        }
+        .frame(height: chrome.rowHeight)
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(height: 1)
         }
     }
 
@@ -146,6 +147,7 @@ struct RootView: View {
                 }
             }
         }
+        .frame(minWidth: 0)
     }
 
     private var trafficLights: some View {
@@ -234,6 +236,18 @@ struct RootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct WindowDragRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        DragView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
     }
 }
 
