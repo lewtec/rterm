@@ -90,13 +90,9 @@ If host is empty, attach is local. Run the driver command in a login shell so `P
 $SHELL -lc '<driver-command>'
 ```
 
-If backend is `herdr` and host is set, attach with the local herdr client so you join that machine's herdr server:
+If backend is `herdr`, attach by running the **same binary as the running herdr server** on that machine (local or remote). Resolve it from the process that owns `herdr.sock` (`/proc/<pid>/exe` or `ps`). Fall back to `herdr` on `PATH` if no server is running.
 
-```text
-$SHELL -lc "herdr --remote 'user@host'"
-```
-
-Do not SSH and run a second `herdr` on the remote. That can start another server.
+Do not use `herdr --remote`. SSH + a PATH `herdr` can be a different binary than the server (wrapper, old pin, other channel).
 
 If host is set and backend is `tmux` or `screen`, transport is SSH. Use `/usr/bin/ssh`. Do not use libssh.
 
@@ -114,7 +110,7 @@ Driver commands:
 
 | backend | command |
 | --- | --- |
-| herdr | `herdr` |
+| herdr | same binary as the running `herdr server`, else `herdr` |
 | tmux | `tmux new-session -A -s <session>` |
 | screen | `screen -d -R <session>` |
 

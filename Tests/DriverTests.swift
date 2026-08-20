@@ -43,15 +43,19 @@ final class DriverTests: XCTestCase {
         let place = Place(user: "", host: "", backend: .herdr)
         let launch = Driver.launch(for: place)
         XCTAssertEqual(launch.executable, Driver.localShell)
-        XCTAssertEqual(launch.arguments, ["-lc", "herdr"])
+        XCTAssertEqual(launch.arguments, ["-lc", Driver.herdrAttachScript])
         XCTAssertEqual(place.displayLabel, "herdr")
     }
 
-    func testRemoteHerdrUsesLocalClient() {
+    func testRemoteHerdrUsesSSHAndServerBinary() {
         let place = Place(user: "ada", host: "riverwood", backend: .herdr)
         let launch = Driver.launch(for: place)
-        XCTAssertEqual(launch.executable, Driver.localShell)
-        XCTAssertEqual(launch.arguments, ["-lc", "herdr --remote 'ada@riverwood'"])
+        XCTAssertEqual(launch.executable, Driver.sshExecutable)
+        XCTAssertTrue(Driver.remoteCommand(for: place).contains("/proc/"))
+        XCTAssertTrue(Driver.remoteCommand(for: place).contains("exec herdr"))
+        XCTAssertFalse(Driver.remoteCommand(for: place).contains("--remote"))
+        XCTAssertEqual(launch.arguments.prefix(5), ["-t", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2"])
+        XCTAssertEqual(launch.arguments[5], "ada@riverwood")
     }
 
     func testEmptyHostTmuxLabel() {
