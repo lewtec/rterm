@@ -18,9 +18,16 @@ struct RtermApp: App {
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
-            CommandMenu("View") {
-                Button(chrome.splitActive ? "Exit Full Screen" : "Enter Full Screen") {
+            CommandGroup(after: .toolbar) {
+                Button {
                     chrome.toggleFillScreen()
+                } label: {
+                    Label(
+                        chrome.splitActive ? "Exit Full Screen" : "Enter Full Screen",
+                        systemImage: chrome.splitActive
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right"
+                    )
                 }
                 .keyboardShortcut("f", modifiers: [.control, .command])
             }

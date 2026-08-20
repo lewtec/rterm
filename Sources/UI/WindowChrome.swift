@@ -2,9 +2,7 @@ import AppKit
 import SwiftTerm
 import SwiftUI
 
-/// System fullscreen lives in a Space and never includes the camera strip.
-/// Apple documents `auxiliaryTopLeftArea` for a *custom* full-screen window
-/// whose frame is `NSScreen.frame`. That is this type.
+/// Custom fill-screen (not Spaces fullscreen). One flag, two apply paths.
 @MainActor
 final class WindowChrome: NSObject, ObservableObject {
     @Published private(set) var splitActive = false
@@ -16,18 +14,12 @@ final class WindowChrome: NSObject, ObservableObject {
 
     private weak var attachedWindow: NSWindow?
     private var isFillScreen = false
-    private var savedFrame = NSRect.zero
-    private var savedStyleMask: NSWindow.StyleMask = []
-    private var savedPresentation: NSApplication.PresentationOptions = []
-    private var savedMovable = true
-    private var savedTransparent = false
-    private var savedBackground: NSColor?
-    private var savedHasShadow = true
+    private var windowedFrame = NSRect.zero
+    private var primedTitlebar = false
     private weak var zoomButton: NSButton?
     private var savedZoomTarget: AnyObject?
     private var savedZoomAction: Selector?
     private var keyMonitor: Any?
-    private var windowedTitlebarApplied = false
 
     func attach(to window: NSWindow?) {
         attachedWindow = window
@@ -35,44 +27,61 @@ final class WindowChrome: NSObject, ObservableObject {
         installZoomHook(on: window)
         installKeyMonitor()
         if !isFillScreen {
-            applyWindowedTitlebar(on: window)
+            applyWindowed(restoreFrame: false)
         }
     }
 
-    private func applyWindowedTitlebar(on window: NSWindow?) {
-        guard let window else {
+    private func applyWindowed(restoreFrame: Bool) {
+        guard let window = attachedWindow else {
             return
         }
-        var mask = window.styleMask
-        mask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
-        if window.styleMask != mask {
-            window.styleMask = mask
-        }
-        if !windowedTitlebarApplied {
-            windowedTitlebarApplied = true
-            DispatchQueue.main.async { [weak self] in
-                self?.rebuildWindowedTitlebar()
-            }
-        }
+        isFillScreen = false
+        NSApp.presentationOptions = []
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = ""
+        window.hasShadow = true
+        window.isMovable = true
         if window.toolbar != nil {
             window.toolbar = nil
         }
         window.toolbarStyle = .unifiedCompact
+        if restoreFrame, windowedFrame != .zero {
+            window.setFrame(windowedFrame, display: true)
+        }
+        if !primedTitlebar {
+            primedTitlebar = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isFillScreen, let window = self.attachedWindow else {
+                    return
+                }
+                window.styleMask.remove(.titled)
+                window.styleMask.insert([.titled, .fullSizeContentView])
+                self.syncWindowedRowHeight(from: window)
+            }
+        }
+        installZoomHook(on: window)
+        clearGeometry()
         syncWindowedRowHeight(from: window)
     }
 
-    private func rebuildWindowedTitlebar() {
-        guard !isFillScreen, let window = attachedWindow else {
+    private func applyFill() {
+        guard let window = attachedWindow, let screen = window.screen else {
             return
         }
-        var mask = window.styleMask
-        mask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
-        window.styleMask = mask.subtracting(.titled)
-        window.styleMask = mask
-        applyWindowedTitlebar(on: window)
+        windowedFrame = window.frame
+        isFillScreen = true
+        NSApp.presentationOptions = [.autoHideDock, .autoHideMenuBar]
+        window.styleMask = [.borderless, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.hasShadow = false
+        window.isMovable = false
+        window.backgroundColor = .windowBackgroundColor
+        window.setFrame(screen.frame, display: true)
+        refreshGeometry(from: window)
+        focusTerminal(in: window)
     }
 
     private func syncWindowedRowHeight(from window: NSWindow) {
@@ -130,57 +139,17 @@ final class WindowChrome: NSObject, ObservableObject {
     }
 
     @objc func toggleFillScreen() {
-        guard let window = attachedWindow ?? NSApp.keyWindow else {
-            return
+        if attachedWindow == nil {
+            attachedWindow = NSApp.keyWindow
         }
         if isFillScreen {
-            exitFillScreen(window)
+            applyWindowed(restoreFrame: true)
+            if let window = attachedWindow {
+                focusTerminal(in: window)
+            }
         } else {
-            enterFillScreen(window)
+            applyFill()
         }
-    }
-
-    private func enterFillScreen(_ window: NSWindow) {
-        guard let screen = window.screen else {
-            return
-        }
-        savedFrame = window.frame
-        savedStyleMask = window.styleMask
-        savedPresentation = NSApp.presentationOptions
-        savedMovable = window.isMovable
-        savedTransparent = window.titlebarAppearsTransparent
-        savedBackground = window.backgroundColor
-        savedHasShadow = window.hasShadow
-        isFillScreen = true
-
-        NSApp.presentationOptions = [.autoHideDock, .autoHideMenuBar]
-        var mask = window.styleMask
-        mask.remove([.titled, .closable, .miniaturizable, .resizable])
-        window.styleMask = mask.union([.borderless, .fullSizeContentView])
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.hasShadow = false
-        window.isMovable = false
-        window.backgroundColor = .windowBackgroundColor
-        window.setFrame(screen.frame, display: true)
-        refreshGeometry(from: window)
-        focusTerminal(in: window)
-    }
-
-    private func exitFillScreen(_ window: NSWindow) {
-        isFillScreen = false
-        NSApp.presentationOptions = savedPresentation
-        window.hasShadow = savedHasShadow
-        window.isMovable = savedMovable
-        if let savedBackground {
-            window.backgroundColor = savedBackground
-        }
-        window.setFrame(savedFrame, display: true)
-        windowedTitlebarApplied = false
-        applyWindowedTitlebar(on: window)
-        installZoomHook(on: window)
-        clearGeometry()
-        focusTerminal(in: window)
     }
 
     private func pinFrame(_ window: NSWindow) {
