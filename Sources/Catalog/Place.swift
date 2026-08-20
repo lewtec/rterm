@@ -47,7 +47,8 @@ struct Place: Identifiable, Hashable {
             return label
         }
         let shownHost = isLocal ? "localhost" : host
-        let core = user.isEmpty ? shownHost : "\(user)@\(shownHost)"
+        let shownUser = user.isEmpty && isLocal ? NSUserName() : user
+        let core = shownUser.isEmpty ? shownHost : "\(shownUser)@\(shownHost)"
         switch backend {
         case .herdr:
             return core

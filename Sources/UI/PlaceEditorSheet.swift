@@ -8,8 +8,8 @@ struct PlaceEditorSheet: View {
             Text(store.editor?.originID == nil ? "Add Place" : "Edit Place")
                 .font(.title2)
             Form {
-                TextField("User", text: user, prompt: Text("required if remote"))
-                TextField("Host", text: host, prompt: Text("empty = this Mac"))
+                TextField("User", text: user, prompt: Text(Place.isLoopbackHost(store.editor?.host ?? "") ? NSUserName() : "required if remote"))
+                TextField("Host", text: host, prompt: Text("empty = localhost"))
                 Picker("Backend", selection: backend) {
                     ForEach(Backend.allCases) { value in
                         Text(value.rawValue).tag(value)

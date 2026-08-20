@@ -80,6 +80,9 @@ final class AppStore: ObservableObject {
         draft.user = draft.user.trimmingCharacters(in: .whitespacesAndNewlines)
         if Place.isLoopbackHost(draft.host) {
             draft.host = ""
+            if draft.user.isEmpty {
+                draft.user = NSUserName()
+            }
         } else if draft.user.isEmpty {
             return
         }

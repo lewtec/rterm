@@ -44,7 +44,7 @@ final class DriverTests: XCTestCase {
         let launch = Driver.launch(for: place)
         XCTAssertEqual(launch.executable, Driver.localShell)
         XCTAssertEqual(launch.arguments, ["-lc", Driver.herdrAttachScript])
-        XCTAssertEqual(place.displayLabel, "localhost")
+        XCTAssertEqual(place.displayLabel, "\(NSUserName())@localhost")
     }
 
     func testRemoteHerdrUsesSSHAndServerBinary() {
@@ -76,7 +76,7 @@ final class DriverTests: XCTestCase {
     func testEmptyHostTmuxLabel() {
         let place = Place(user: "", host: "  ", backend: .tmux, session: "dev")
         XCTAssertTrue(place.isLocal)
-        XCTAssertEqual(place.displayLabel, "localhost:tmux(dev)")
+        XCTAssertEqual(place.displayLabel, "\(NSUserName())@localhost:tmux(dev)")
         XCTAssertEqual(Driver.launch(for: place).arguments, ["-lc", "tmux new-session -A -s 'dev'"])
     }
 }
