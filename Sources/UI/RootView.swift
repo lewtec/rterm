@@ -128,6 +128,7 @@ struct RootView: View {
                     PlaceTab(
                         place: place,
                         state: store.attaches[place.id]?.tabState ?? .idle,
+                        headline: store.attaches[place.id]?.connectHeadline,
                         selected: store.selectedID == place.id
                     )
                     .onTapGesture {
@@ -192,8 +193,16 @@ struct RootView: View {
                         AttachPane(
                             place: place,
                             active: active,
+                            headline: store.attaches[place.id]?.connectHeadline
+                                ?? PlaceAttach.connectingTitle,
                             onExit: { code in
                                 store.handleExit(place.id, code: code)
+                            },
+                            onTTY: {
+                                store.noteTTY(place.id)
+                            },
+                            onProgress: { headline in
+                                store.noteProgress(place.id, headline)
                             }
                         )
                         .id("\(place.id.uuidString)-\(generation)")
@@ -219,7 +228,7 @@ struct RootView: View {
                             message: message,
                             onRetry: { store.reconnect(place.id) }
                         )
-                    case .live:
+                    case .attaching, .live:
                         EmptyView()
                     }
 
@@ -280,13 +289,12 @@ private struct TrafficDot: View {
 private struct PlaceTab: View {
     let place: Place
     let state: TabState
+    let headline: String?
     let selected: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 7, height: 7)
+            statusMark
             Text(place.displayLabel)
                 .lineLimit(1)
         }
@@ -296,6 +304,7 @@ private struct PlaceTab: View {
         .overlay(
             Capsule().strokeBorder(selected ? Color.accentColor.opacity(0.5) : Color.clear)
         )
+        .help(headline ?? place.displayLabel)
     }
 
     static func estimatedWidth(for place: Place) -> CGFloat {
@@ -305,9 +314,26 @@ private struct PlaceTab: View {
         return 8 + 7 + 6 + text + 8
     }
 
+    @ViewBuilder
+    private var statusMark: some View {
+        switch state {
+        case .attaching:
+            ProgressView()
+                .controlSize(.mini)
+                .scaleEffect(0.55)
+                .frame(width: 7, height: 7)
+        default:
+            Circle()
+                .fill(dotColor)
+                .frame(width: 7, height: 7)
+        }
+    }
+
     private var dotColor: Color {
         switch state {
         case .idle:
+            return .secondary
+        case .attaching:
             return .secondary
         case .live:
             return .green

@@ -5,15 +5,25 @@ import SwiftUI
 struct AttachPane: View {
     var place: Place
     var active: Bool
+    var headline: String
     var onExit: (Int32?) -> Void
+    var onTTY: () -> Void
+    var onProgress: (String) -> Void
 
     @StateObject private var progress = ConnectProgress()
 
     var body: some View {
         ZStack {
-            AttachTerminal(place: place, active: active, progress: progress, onExit: onExit)
+            AttachTerminal(
+                place: place,
+                active: active,
+                progress: progress,
+                onExit: onExit,
+                onTTY: onTTY,
+                onProgress: onProgress
+            )
             if active, progress.isVisible {
-                ConnectOverlay(progress: progress)
+                ConnectOverlay(progress: progress, headline: headline)
             }
         }
     }
@@ -24,9 +34,11 @@ private struct AttachTerminal: NSViewRepresentable {
     var active: Bool
     var progress: ConnectProgress
     var onExit: (Int32?) -> Void
+    var onTTY: () -> Void
+    var onProgress: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onExit: onExit, progress: progress)
+        Coordinator(onExit: onExit, progress: progress, onProgress: onProgress)
     }
 
     func makeNSView(context: Context) -> FillTerminalView {
@@ -34,12 +46,16 @@ private struct AttachTerminal: NSViewRepresentable {
         view.processDelegate = context.coordinator
         let logURL = place.isLocal ? nil : Self.makeVerboseLogURL(for: place)
         context.coordinator.logURL = logURL
+        context.coordinator.onProgress = onProgress
+        progress.onHeadline = onProgress
         if let logURL {
             context.coordinator.startWatch()
         }
         let launch = Driver.launch(for: place, verboseLog: logURL?.path)
         let progress = progress
+        let onTTY = onTTY
         view.onTTYOutput = {
+            onTTY()
             Task { @MainActor in
                 progress.finish()
             }
@@ -64,6 +80,11 @@ private struct AttachTerminal: NSViewRepresentable {
 
     func updateNSView(_ nsView: FillTerminalView, context: Context) {
         context.coordinator.onExit = onExit
+        context.coordinator.onProgress = onProgress
+        let progress = progress
+        Task { @MainActor in
+            progress.onHeadline = onProgress
+        }
         nsView.processDelegate = context.coordinator
         if nsView.isHidden == active {
             if !active, nsView.window?.firstResponder === nsView {
@@ -86,9 +107,16 @@ private struct AttachTerminal: NSViewRepresentable {
         private var handle: FileHandle?
         private var leftover = Data()
 
-        init(onExit: @escaping (Int32?) -> Void, progress: ConnectProgress) {
+        var onProgress: (String) -> Void
+
+        init(
+            onExit: @escaping (Int32?) -> Void,
+            progress: ConnectProgress,
+            onProgress: @escaping (String) -> Void
+        ) {
             self.onExit = onExit
             self.progress = progress
+            self.onProgress = onProgress
         }
 
         func startWatch() {

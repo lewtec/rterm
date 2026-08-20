@@ -5,11 +5,13 @@ final class ConnectProgress: ObservableObject {
     @Published private(set) var headline = "Connecting…"
     @Published private(set) var crumbs: [String] = []
     @Published private(set) var isVisible = false
+    var onHeadline: ((String) -> Void)?
 
     func beginRemote() {
-        headline = "Connecting…"
+        headline = PlaceAttach.connectingTitle
         crumbs = []
         isVisible = true
+        onHeadline?(headline)
     }
 
     func ingest(_ raw: String) {
@@ -25,6 +27,7 @@ final class ConnectProgress: ObservableObject {
         switch SSHConnectTrace.event(for: raw) {
         case .progress(let text):
             headline = text
+            onHeadline?(text)
         case .revealTerminal:
             isVisible = false
         case .none:
@@ -39,6 +42,7 @@ final class ConnectProgress: ObservableObject {
 
 struct ConnectOverlay: View {
     @ObservedObject var progress: ConnectProgress
+    var headline: String
 
     var body: some View {
         ZStack {
@@ -47,7 +51,7 @@ struct ConnectOverlay: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
-                Text(progress.headline)
+                Text(headline)
                     .font(.headline)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)

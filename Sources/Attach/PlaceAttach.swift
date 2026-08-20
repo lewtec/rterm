@@ -5,21 +5,38 @@ import Foundation
 struct PlaceAttach: Equatable {
     enum Phase: Equatable {
         case idle
+        case attaching(String)
         case live
         case failed(String)
     }
+
+    static let connectingTitle = "Connecting…"
 
     private(set) var phase: Phase = .idle
     private(set) var generation: Int = 0
 
     var showsPane: Bool {
-        phase == .live
+        switch phase {
+        case .attaching, .live:
+            return true
+        case .idle, .failed:
+            return false
+        }
+    }
+
+    var connectHeadline: String? {
+        if case .attaching(let title) = phase {
+            return title
+        }
+        return nil
     }
 
     var tabState: TabState {
         switch phase {
         case .idle:
             return .idle
+        case .attaching:
+            return .attaching
         case .live:
             return .live
         case .failed(let message):
@@ -29,13 +46,26 @@ struct PlaceAttach: Equatable {
 
     mutating func select() {
         if phase == .idle {
-            phase = .live
+            phase = .attaching(Self.connectingTitle)
         }
     }
 
     mutating func reconnect() {
         generation += 1
-        phase = .live
+        phase = .attaching(Self.connectingTitle)
+    }
+
+    mutating func noteProgress(_ headline: String) {
+        guard case .attaching(let current) = phase, current != headline else {
+            return
+        }
+        phase = .attaching(headline)
+    }
+
+    mutating func noteTTY() {
+        if case .attaching = phase {
+            phase = .live
+        }
     }
 
     mutating func sleep() {

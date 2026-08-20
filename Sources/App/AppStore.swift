@@ -144,6 +144,14 @@ final class AppStore: ObservableObject {
         mutateAttach(id) { $0.handleExit(code) }
     }
 
+    func noteTTY(_ id: UUID) {
+        mutateAttach(id) { $0.noteTTY() }
+    }
+
+    func noteProgress(_ id: UUID, _ headline: String) {
+        mutateAttach(id) { $0.noteProgress(headline) }
+    }
+
     func revealCatalog() {
         do {
             try catalogIO.prepareDirectory()
