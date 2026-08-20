@@ -1,0 +1,11 @@
+[tools]
+xcodegen = "2.46.0"
+
+[tasks.generate]
+description = "Regenerate rterm.xcodeproj from project.yml"
+run = "xcodegen generate"
+
+[tasks.build]
+description = "Debug-build the Mac app"
+run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation build"
+depends = ["generate"]

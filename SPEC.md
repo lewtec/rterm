@@ -135,7 +135,8 @@ Each place record has: `id`, `user`, `host`, `backend`, optional `session`, opti
 | Chrome | SwiftUI (tabs, CRUD sheet, overlay) |
 | Pane | SwiftTerm in an `NSViewRepresentable` |
 | SSH | `/usr/bin/ssh` as a child process in the SwiftTerm PTY |
-| Toolchain install | mise, later; not a product rule |
+| Bundle id | `br.tec.lew.rterm` |
+| Toolchain | Xcode; XcodeGen via project `mise.toml` |
 
 Do not use librio, rio-vt, Iced, or a winit/wgpu shell in v1.
 
