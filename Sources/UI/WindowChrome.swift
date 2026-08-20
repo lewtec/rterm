@@ -20,12 +20,14 @@ final class WindowChrome: NSObject, ObservableObject {
     private var savedZoomTarget: AnyObject?
     private var savedZoomAction: Selector?
     private var keyMonitor: Any?
+    private var behaviorObservation: NSKeyValueObservation?
 
     func attach(to window: NSWindow?) {
         attachedWindow = window
         installCollectionBehavior(on: window)
         installZoomHook(on: window)
         installKeyMonitor()
+        installMenuHook()
         if !isFillScreen {
             applyWindowed(restoreFrame: false)
         }
@@ -64,6 +66,7 @@ final class WindowChrome: NSObject, ObservableObject {
         installZoomHook(on: window)
         clearGeometry()
         syncWindowedRowHeight(from: window)
+        neutralizeSystemFullScreenItem()
     }
 
     private func applyFill() {
@@ -81,6 +84,7 @@ final class WindowChrome: NSObject, ObservableObject {
         window.backgroundColor = .windowBackgroundColor
         window.setFrame(screen.frame, display: true)
         refreshGeometry(from: window)
+        neutralizeSystemFullScreenItem()
         focusTerminal(in: window)
     }
 
@@ -251,16 +255,81 @@ final class WindowChrome: NSObject, ObservableObject {
     }
 
     private func installCollectionBehavior(on window: NSWindow?) {
+        behaviorObservation?.invalidate()
+        behaviorObservation = nil
         guard let window else {
             return
         }
+        applyCollectionBehavior(on: window)
+        behaviorObservation = window.observe(\.collectionBehavior) { [weak self] window, _ in
+            DispatchQueue.main.async {
+                self?.applyCollectionBehavior(on: window)
+            }
+        }
+    }
+
+    private func applyCollectionBehavior(on window: NSWindow) {
         var behavior = window.collectionBehavior
         behavior.remove(.fullScreenPrimary)
+        behavior.remove(.fullScreenAuxiliary)
         behavior.remove(.fullScreenAllowsTiling)
         behavior.insert(.fullScreenNone)
-        if window.collectionBehavior != behavior {
-            window.collectionBehavior = behavior
+        behavior.insert(.fullScreenDisallowsTiling)
+        guard window.collectionBehavior != behavior else {
+            return
         }
+        window.collectionBehavior = behavior
+    }
+
+    private func installMenuHook() {
+        let center = NotificationCenter.default
+        center.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil)
+        center.removeObserver(self, name: NSMenu.didAddItemNotification, object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(handleMenuChange),
+            name: NSMenu.didBeginTrackingNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleMenuChange),
+            name: NSMenu.didAddItemNotification,
+            object: nil
+        )
+        neutralizeSystemFullScreenItem()
+    }
+
+    @objc private func handleMenuChange(_ notification: Notification) {
+        neutralizeSystemFullScreenItem()
+    }
+
+    private func neutralizeSystemFullScreenItem() {
+        guard let root = NSApp.mainMenu else {
+            return
+        }
+        func walk(_ menu: NSMenu) {
+            for item in menu.items {
+                if Self.isInjectedFullScreenItem(item) {
+                    item.isHidden = true
+                    item.isEnabled = false
+                    item.keyEquivalent = ""
+                    item.target = self
+                    item.action = #selector(toggleFillScreen)
+                }
+                if let submenu = item.submenu {
+                    walk(submenu)
+                }
+            }
+        }
+        walk(root)
+    }
+
+    private static func isInjectedFullScreenItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(NSWindow.toggleFullScreen(_:)) {
+            return true
+        }
+        return item.identifier?.rawValue == "toggleFullScreen:"
     }
 
     private func installZoomHook(on window: NSWindow?) {

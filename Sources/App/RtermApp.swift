@@ -18,7 +18,7 @@ struct RtermApp: App {
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
-            CommandGroup(after: .toolbar) {
+            CommandGroup(replacing: .sidebar) {
                 Button {
                     chrome.toggleFillScreen()
                 } label: {
