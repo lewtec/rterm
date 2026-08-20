@@ -7,7 +7,13 @@ final class DriverTests: XCTestCase {
         XCTAssertEqual(Driver.sshExecutable, "/usr/bin/ssh")
         XCTAssertEqual(
             Driver.sshArguments(for: place),
-            ["-t", "ada@riverwood", "exec \"$SHELL\" -lc 'herdr'"]
+            [
+                "-t",
+                "-o", "ServerAliveInterval=5",
+                "-o", "ServerAliveCountMax=2",
+                "ada@riverwood",
+                "exec \"$SHELL\" -lc 'herdr'",
+            ]
         )
     }
 

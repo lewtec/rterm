@@ -179,7 +179,7 @@ private struct PlaceTab: View {
         case .live:
             return .green
         case .failed:
-            return .orange
+            return .red
         }
     }
 }

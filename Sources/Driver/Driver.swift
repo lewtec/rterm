@@ -30,10 +30,19 @@ enum Driver {
         }
     }
 
+    static let serverAliveInterval = 5
+    static let serverAliveCountMax = 2
+
     static func sshArguments(for place: Place) -> [String] {
         let target = "\(place.user)@\(place.host)"
         let wrapped = "exec \"$SHELL\" -lc \(shellSingleQuote(remoteCommand(for: place)))"
-        return ["-t", target, wrapped]
+        return [
+            "-t",
+            "-o", "ServerAliveInterval=\(serverAliveInterval)",
+            "-o", "ServerAliveCountMax=\(serverAliveCountMax)",
+            target,
+            wrapped,
+        ]
     }
 
     static func shellSingleQuote(_ value: String) -> String {

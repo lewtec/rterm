@@ -95,10 +95,12 @@ If host is set, transport is SSH. Use `/usr/bin/ssh`. Do not use libssh. Do not 
 Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so the remote `PATH` is the user's login `PATH`:
 
 ```text
-ssh -t user@host -- exec "$SHELL" -lc '<driver-command>'
+ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 user@host -- exec "$SHELL" -lc '<driver-command>'
 ```
 
 `$SHELL` is the user's shell (local or remote as SSH resolves it). Do not hard-code bash or zsh.
+
+A dead path must make `ssh` exit. ServerAlive options do that. The tab dot is grey when idle, green when the process is alive, and red when attach failed. Do not show a latency color. Local places have no ServerAlive options.
 
 Driver commands:
 
