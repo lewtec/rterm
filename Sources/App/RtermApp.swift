@@ -12,7 +12,7 @@ struct RtermApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: 960, height: 600)
-        .windowToolbarStyle(.unified(showsTitle: false))
+        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandMenu("Place") {

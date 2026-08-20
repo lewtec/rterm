@@ -60,15 +60,18 @@ struct RootView: View {
             }
             .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.flexible)
+            ToolbarItem(placement: .primaryAction) {
+                addPlaceButton
+            }
+            .sharedBackgroundVisibility(.hidden)
         } else {
             ToolbarItem(placement: .navigation) {
                 tabStrip
                     .buttonStyle(.plain)
             }
-        }
-
-        ToolbarItem(placement: .primaryAction) {
-            addPlaceButton
+            ToolbarItem(placement: .primaryAction) {
+                addPlaceButton
+            }
         }
     }
 
@@ -105,7 +108,10 @@ struct RootView: View {
             store.beginAdd()
         } label: {
             Image(systemName: "plus")
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 18, height: 18)
         }
+        .buttonStyle(.plain)
         .help("Add Place")
     }
 
@@ -182,8 +188,8 @@ private struct PlaceTab: View {
             Text(place.displayLabel)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
         .background(selected ? Color.accentColor.opacity(0.22) : Color.clear, in: Capsule())
         .overlay(
             Capsule().strokeBorder(selected ? Color.accentColor.opacity(0.5) : Color.clear)
