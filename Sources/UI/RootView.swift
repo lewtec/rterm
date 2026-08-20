@@ -127,7 +127,7 @@ struct RootView: View {
                 ForEach(places) { place in
                     PlaceTab(
                         place: place,
-                        state: store.tabStates[place.id] ?? .idle,
+                        state: store.attaches[place.id]?.tabState ?? .idle,
                         selected: store.selectedID == place.id
                     )
                     .onTapGesture {
@@ -186,39 +186,46 @@ struct RootView: View {
             GeometryReader { geo in
             ZStack {
                 ForEach(store.places) { place in
-                    if store.hasPane(place.id) {
-                        let epoch = store.paneEpoch[place.id, default: 0]
+                    if store.attaches[place.id]?.showsPane == true {
+                        let active = store.selectedID == place.id
+                        let generation = store.attaches[place.id]?.generation ?? 0
                         AttachPane(
                             place: place,
-                            active: store.selectedID == place.id,
+                            active: active,
                             onExit: { code in
                                 store.handleExit(place.id, code: code)
                             }
                         )
-                        .id("\(place.id.uuidString)-\(epoch)")
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .opacity(store.selectedID == place.id ? 1 : 0)
-                        .allowsHitTesting(store.selectedID == place.id)
-                    }
-                }
-
-                if let place = store.selectedPlace, !store.hasPane(place.id) {
-                    ContentUnavailableView {
-                        Label("Idle", systemImage: "moon.zzz")
-                    } description: {
-                        Text("Click this tab or Reconnect to attach.")
+                        .id("\(place.id.uuidString)-\(generation)")
+                        .frame(
+                            width: active ? geo.size.width : 0,
+                            height: active ? geo.size.height : 0
+                        )
+                        .opacity(active ? 1 : 0)
+                        .allowsHitTesting(active)
                     }
                 }
 
                 if let place = store.selectedPlace {
+                    switch store.attaches[place.id]?.phase {
+                    case .idle, .none:
+                        ContentUnavailableView {
+                            Label("Idle", systemImage: "moon.zzz")
+                        } description: {
+                            Text("Click this tab or Reconnect to attach.")
+                        }
+                    case .failed(let message):
+                        FailureOverlay(
+                            message: message,
+                            onRetry: { store.reconnect(place.id) }
+                        )
+                    case .live:
+                        EmptyView()
+                    }
+
                     if store.debugOverlay {
                         FailureOverlay(
                             message: "debug overlay",
-                            onRetry: { store.reconnect(place.id) }
-                        )
-                    } else if case .failed(let message) = store.tabStates[place.id] {
-                        FailureOverlay(
-                            message: message,
                             onRetry: { store.reconnect(place.id) }
                         )
                     }

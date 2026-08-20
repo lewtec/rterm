@@ -6,8 +6,7 @@ import SwiftUI
 final class AppStore: ObservableObject {
     @Published var places: [Place] = []
     @Published var selectedID: UUID?
-    @Published var tabStates: [UUID: TabState] = [:]
-    @Published var paneEpoch: [UUID: Int] = [:]
+    @Published var attaches: [UUID: PlaceAttach] = [:]
     @Published var editor: PlaceEditorState?
     @Published var debugOverlay = false
     @Published var catalogError: String?
@@ -29,9 +28,7 @@ final class AppStore: ObservableObject {
 
     func select(_ id: UUID) {
         selectedID = id
-        if tabStates[id] == nil || tabStates[id] == .idle {
-            tabStates[id] = .live
-        }
+        mutateAttach(id) { $0.select() }
     }
 
     func selectPlace(at index: Int) {
@@ -40,8 +37,7 @@ final class AppStore: ObservableObject {
     }
 
     func reconnect(_ id: UUID) {
-        paneEpoch[id, default: 0] += 1
-        tabStates[id] = .live
+        mutateAttach(id) { $0.reconnect() }
         debugOverlay = false
     }
 
@@ -53,7 +49,7 @@ final class AppStore: ObservableObject {
     func dropAllConnections() {
         debugOverlay = false
         for id in places.map(\.id) {
-            tabStates[id] = .idle
+            mutateAttach(id) { $0.sleep() }
         }
     }
 
@@ -112,12 +108,12 @@ final class AppStore: ObservableObject {
 
         let shouldReattach: Bool
         if let index = places.firstIndex(where: { $0.id == place.id }) {
-            shouldReattach = places[index] != place && tabStates[place.id] != .idle
+            shouldReattach = places[index] != place && attaches[place.id]?.phase != .idle
             places[index] = place
         } else {
             shouldReattach = false
             places.append(place)
-            tabStates[place.id] = .idle
+            attaches[place.id] = PlaceAttach()
         }
         editor = nil
         persist()
@@ -130,8 +126,7 @@ final class AppStore: ObservableObject {
 
     func delete(_ id: UUID) {
         places.removeAll { $0.id == id }
-        tabStates[id] = nil
-        paneEpoch[id] = nil
+        attaches[id] = nil
         if selectedID == id {
             if let next = places.first?.id {
                 select(next)
@@ -146,21 +141,7 @@ final class AppStore: ObservableObject {
     }
 
     func handleExit(_ id: UUID, code: Int32?) {
-        switch AttachExit.classify(code) {
-        case .clean:
-            tabStates[id] = .idle
-        case .failed(let message):
-            tabStates[id] = .failed(message)
-        }
-    }
-
-    func hasPane(_ id: UUID) -> Bool {
-        switch tabStates[id] {
-        case .live, .failed:
-            return true
-        case .idle, .none:
-            return false
-        }
+        mutateAttach(id) { $0.handleExit(code) }
     }
 
     func revealCatalog() {
@@ -211,10 +192,9 @@ final class AppStore: ObservableObject {
 
     private func applyPlaces(_ incoming: [Place], selectFirst: Bool) {
         let incomingIDs = Set(incoming.map(\.id))
-        tabStates = tabStates.filter { incomingIDs.contains($0.key) }
-        paneEpoch = paneEpoch.filter { incomingIDs.contains($0.key) }
-        for place in incoming where tabStates[place.id] == nil {
-            tabStates[place.id] = .idle
+        attaches = attaches.filter { incomingIDs.contains($0.key) }
+        for place in incoming where attaches[place.id] == nil {
+            attaches[place.id] = PlaceAttach()
         }
         places = incoming
         if selectFirst || selectedID.map(incomingIDs.contains) != true {
@@ -232,6 +212,12 @@ final class AppStore: ObservableObject {
         } catch {
             catalogError = error.localizedDescription
         }
+    }
+
+    private func mutateAttach(_ id: UUID, _ body: (inout PlaceAttach) -> Void) {
+        var attach = attaches[id] ?? PlaceAttach()
+        body(&attach)
+        attaches[id] = attach
     }
 
     static func fixturePlaces() -> [Place] {

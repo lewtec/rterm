@@ -11,11 +11,12 @@ final class AppStoreSleepTests: XCTestCase {
         let first = try XCTUnwrap(store.places.first?.id)
         store.select(first)
         store.handleExit(first, code: 255)
-        XCTAssertTrue(store.hasPane(first))
+        XCTAssertEqual(store.attaches[first]?.phase, .failed("exited (255)"))
+        XCTAssertEqual(store.attaches[first]?.showsPane, false)
         store.dropAllConnections()
         XCTAssertEqual(store.selectedID, first)
-        XCTAssertEqual(store.tabStates[first], .idle)
-        XCTAssertFalse(store.hasPane(first))
+        XCTAssertEqual(store.attaches[first]?.phase, .idle)
+        XCTAssertEqual(store.attaches[first]?.showsPane, false)
     }
 
     func testSelectPlaceAtIndex() throws {
