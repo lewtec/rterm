@@ -110,11 +110,13 @@ enum CatalogCodec {
         for place in document.places {
             lines.append("[[place]]")
             lines.append("id = \(quote(place.id.uuidString))")
-            if !place.user.isEmpty {
-                lines.append("user = \(quote(place.user))")
-            }
-            if !place.host.isEmpty {
-                lines.append("host = \(quote(place.host))")
+            if !place.isLocal {
+                if !place.user.isEmpty {
+                    lines.append("user = \(quote(place.user))")
+                }
+                if !place.host.isEmpty {
+                    lines.append("host = \(quote(place.host))")
+                }
             }
             lines.append("backend = \(quote(place.backend.rawValue))")
             if place.backend != .herdr, let session = place.session, !session.isEmpty {
@@ -188,9 +190,12 @@ private struct PartialPlace {
     func finish(startingAt line: Int) throws -> Place {
         guard let id else { throw CatalogCodecError.missingField("id", line) }
         guard let backend else { throw CatalogCodecError.missingField("backend", line) }
-        let trimmedHost = (host ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedUser = (user ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedHost.isEmpty && trimmedUser.isEmpty {
+        var trimmedHost = (host ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmedUser = (user ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if Place.isLoopbackHost(trimmedHost) {
+            trimmedHost = ""
+            trimmedUser = ""
+        } else if trimmedUser.isEmpty {
             throw CatalogCodecError.missingField("user", line)
         }
         let trimmedSession = session?.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -88,6 +88,25 @@ final class CatalogCodecTests: XCTestCase {
         XCTAssertEqual(decoded.places[0].host, "")
     }
 
+    func testLocalhostHostNormalizesToLocalPlace() throws {
+        let text = """
+        version = 1
+
+        [[place]]
+        id = "11111111-1111-1111-1111-111111111111"
+        user = "ada"
+        host = "localhost"
+        backend = "herdr"
+        """
+        let decoded = try CatalogCodec.decode(text)
+        XCTAssertEqual(decoded.places[0].host, "")
+        XCTAssertEqual(decoded.places[0].user, "")
+        XCTAssertTrue(decoded.places[0].isLocal)
+        let encoded = CatalogCodec.encode(decoded)
+        XCTAssertFalse(encoded.contains("localhost"))
+        XCTAssertFalse(encoded.contains("user ="))
+    }
+
     func testRemotePlaceStillRequiresUser() {
         let text = """
         version = 1

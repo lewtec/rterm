@@ -58,6 +58,21 @@ final class DriverTests: XCTestCase {
         XCTAssertEqual(launch.arguments[5], "ada@riverwood")
     }
 
+    func testLocalhostIsLocalNotUserAtLocalhost() {
+        let place = Place(user: "ada", host: "localhost", backend: .herdr)
+        XCTAssertTrue(place.isLocal)
+        XCTAssertEqual(place.displayLabel, "herdr")
+        XCTAssertEqual(Driver.launch(for: place).executable, Driver.localShell)
+        XCTAssertNotEqual(Driver.launch(for: place).executable, Driver.sshExecutable)
+    }
+
+    func testLoopbackLiteralsAreLocal() {
+        XCTAssertTrue(Place(user: "ada", host: "127.0.0.1", backend: .herdr).isLocal)
+        XCTAssertTrue(Place(user: "ada", host: "::1", backend: .herdr).isLocal)
+        XCTAssertTrue(Place(user: "ada", host: "[::1]", backend: .herdr).isLocal)
+        XCTAssertFalse(Place(user: "ada", host: "riverwood", backend: .herdr).isLocal)
+    }
+
     func testEmptyHostTmuxLabel() {
         let place = Place(user: "", host: "  ", backend: .tmux, session: "dev")
         XCTAssertTrue(place.isLocal)

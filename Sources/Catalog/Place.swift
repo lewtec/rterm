@@ -25,7 +25,21 @@ struct Place: Identifiable, Hashable {
     }
 
     var isLocal: Bool {
-        host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        Self.isLoopbackHost(host)
+    }
+
+    static func isLoopbackHost(_ host: String) -> Bool {
+        var value = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("[") && value.hasSuffix("]") {
+            value = String(value.dropFirst().dropLast())
+        }
+        value = value.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+        switch value {
+        case "", "localhost", "localhost.localdomain", "127.0.0.1", "0.0.0.0", "::1":
+            return true
+        default:
+            return value.hasSuffix(".localhost")
+        }
     }
 
     var displayLabel: String {

@@ -39,15 +39,15 @@ v1 is a Mac app. Linux, Windows, Iced, and winit ports are out of scope. You may
 
 A place is:
 
-- user (required when host is set)
-- host (empty means this Mac)
+- user (required when the place is remote)
+- host (empty, `localhost`, `127.0.0.1`, or `::1` means this Mac)
 - backend: `herdr`, `tmux`, or `screen`
 - session name: required for `tmux` and `screen`; absent for `herdr`
 - label: optional
 
 herdr has no session name in rterm.
 
-An empty host is a local place. Attach runs the mux on this Mac. Do not use SSH.
+An empty host or a loopback host (`localhost`, `127.0.0.1`, `::1`) is a local place. Attach runs the mux on this Mac. Do not use SSH. Do not label it `user@localhost`. Persist it with no user and no host.
 
 If the user leaves the label empty, the default is:
 

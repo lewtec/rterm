@@ -78,7 +78,10 @@ final class AppStore: ObservableObject {
         guard var draft = editor else { return }
         draft.host = draft.host.trimmingCharacters(in: .whitespacesAndNewlines)
         draft.user = draft.user.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !draft.host.isEmpty && draft.user.isEmpty {
+        if Place.isLoopbackHost(draft.host) {
+            draft.host = ""
+            draft.user = ""
+        } else if draft.user.isEmpty {
             return
         }
         if draft.backend == .herdr {

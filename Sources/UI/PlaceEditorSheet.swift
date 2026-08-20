@@ -46,7 +46,7 @@ struct PlaceEditorSheet: View {
         guard let editor = store.editor else { return false }
         let user = editor.user.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = editor.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !host.isEmpty && user.isEmpty {
+        if !Place.isLoopbackHost(host) && user.isEmpty {
             return false
         }
         if editor.backend != .herdr
