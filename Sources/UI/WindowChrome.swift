@@ -12,8 +12,13 @@ final class WindowChrome: NSObject, ObservableObject {
     @Published private(set) var notchWidth: CGFloat = 0
     @Published private(set) var rowHeight: CGFloat = 28
 
+    private enum Mode {
+        case windowed
+        case fill
+    }
+
     private weak var attachedWindow: NSWindow?
-    private var isFillScreen = false
+    private var mode: Mode = .windowed
     private var windowedFrame = NSRect.zero
     private var primedTitlebar = false
     private weak var zoomButton: NSButton?
@@ -28,7 +33,7 @@ final class WindowChrome: NSObject, ObservableObject {
         installZoomHook(on: window)
         installKeyMonitor()
         installMenuHook()
-        if !isFillScreen {
+        if mode == .windowed {
             applyWindowed(restoreFrame: false)
         }
     }
@@ -37,7 +42,7 @@ final class WindowChrome: NSObject, ObservableObject {
         guard let window = attachedWindow else {
             return
         }
-        isFillScreen = false
+        mode = .windowed
         NSApp.presentationOptions = []
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
@@ -55,7 +60,7 @@ final class WindowChrome: NSObject, ObservableObject {
         if !primedTitlebar {
             primedTitlebar = true
             DispatchQueue.main.async { [weak self] in
-                guard let self, !self.isFillScreen, let window = self.attachedWindow else {
+                guard let self, self.mode == .windowed, let window = self.attachedWindow else {
                     return
                 }
                 window.styleMask.remove(.titled)
@@ -74,7 +79,7 @@ final class WindowChrome: NSObject, ObservableObject {
             return
         }
         windowedFrame = window.frame
-        isFillScreen = true
+        mode = .fill
         NSApp.presentationOptions = [.autoHideDock, .autoHideMenuBar]
         window.styleMask = [.borderless, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
@@ -89,7 +94,7 @@ final class WindowChrome: NSObject, ObservableObject {
     }
 
     private func syncWindowedRowHeight(from window: NSWindow) {
-        guard !isFillScreen else {
+        guard mode == .windowed else {
             return
         }
         let height = Self.windowedRowHeight(for: window)
@@ -97,7 +102,7 @@ final class WindowChrome: NSObject, ObservableObject {
             return
         }
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.isFillScreen else {
+            guard let self, self.mode == .windowed else {
                 return
             }
             if !Self.capsAlmostEqual(self.rowHeight, height) {
@@ -117,7 +122,7 @@ final class WindowChrome: NSObject, ObservableObject {
     }
 
     func handleScreenChange(of window: NSWindow?) {
-        guard isFillScreen, let window else {
+        guard mode == .fill, let window else {
             return
         }
         attachedWindow = window
@@ -146,7 +151,7 @@ final class WindowChrome: NSObject, ObservableObject {
         if attachedWindow == nil {
             attachedWindow = NSApp.keyWindow
         }
-        if isFillScreen {
+        if mode == .fill {
             applyWindowed(restoreFrame: true)
             if let window = attachedWindow {
                 focusTerminal(in: window)
@@ -365,7 +370,7 @@ final class WindowChrome: NSObject, ObservableObject {
             guard let self else {
                 return event
             }
-            if event.keyCode == 53, self.isFillScreen {
+            if event.keyCode == 53, self.mode == .fill {
                 self.toggleFillScreen()
                 return nil
             }
