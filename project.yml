@@ -34,6 +34,7 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_NSHumanReadableCopyright: Copyright © 2026
         INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
+        INFOPLIST_KEY_NSPrefersDisplaySafeAreaCompatibilityMode: NO
         COMBINE_HIDPI_IMAGES: YES
         ENABLE_TESTABILITY: YES
     dependencies:

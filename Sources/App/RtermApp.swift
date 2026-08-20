@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct RtermApp: App {
     @StateObject private var store = AppStore()
+    @StateObject private var chrome = WindowChrome()
 
     var body: some Scene {
         Window("rterm", id: "main") {
             RootView()
                 .environmentObject(store)
+                .environmentObject(chrome)
                 .frame(minWidth: 720, minHeight: 420)
         }
         .windowResizability(.contentMinSize)
@@ -15,6 +17,12 @@ struct RtermApp: App {
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandMenu("View") {
+                Button(chrome.splitActive ? "Exit Full Screen" : "Enter Full Screen") {
+                    chrome.toggleFillScreen()
+                }
+                .keyboardShortcut("f", modifiers: [.control, .command])
+            }
             CommandMenu("Place") {
                 Button("Add Place…") {
                     store.beginAdd()

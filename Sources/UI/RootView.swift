@@ -3,17 +3,26 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var chrome: WindowChrome
 
     var body: some View {
         VStack(spacing: 0) {
+            if chrome.splitActive {
+                notchRow
+            }
             if let catalogError = store.catalogError {
                 catalogBanner(catalogError)
             }
             paneArea
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .background(WindowChromeReader(chrome: chrome))
+        .ignoresSafeArea(.container, edges: chrome.splitActive ? .top : [])
+        .toolbar(chrome.splitActive ? .hidden : .automatic)
         .toolbar {
-            toolbarContent
+            if !chrome.splitActive {
+                toolbarContent
+            }
         }
         .sheet(isPresented: editorPresented) {
             PlaceEditorSheet()
@@ -55,7 +64,7 @@ struct RootView: View {
     private var toolbarContent: some ToolbarContent {
         if #available(macOS 26.0, *) {
             ToolbarItem(placement: .navigation) {
-                tabStrip
+                tabStrip(store.places)
                     .buttonStyle(.plain)
             }
             .sharedBackgroundVisibility(.hidden)
@@ -66,7 +75,7 @@ struct RootView: View {
             .sharedBackgroundVisibility(.hidden)
         } else {
             ToolbarItem(placement: .navigation) {
-                tabStrip
+                tabStrip(store.places)
                     .buttonStyle(.plain)
             }
             ToolbarItem(placement: .primaryAction) {
@@ -75,10 +84,43 @@ struct RootView: View {
         }
     }
 
-    private var tabStrip: some View {
+    private var notchRow: some View {
+        let packed = packedPlaces
+        return ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            HStack(spacing: 0) {
+                Color.clear.frame(width: chrome.leftPad)
+                tabStrip(packed.leading)
+                    .frame(maxWidth: chrome.leftCap, alignment: .leading)
+                Spacer(minLength: chrome.notchWidth)
+                tabStrip(packed.trailing)
+                    .frame(maxWidth: chrome.rightCap, alignment: .trailing)
+                addPlaceButton
+                    .padding(.trailing, 8)
+            }
+        }
+        .frame(height: chrome.rowHeight)
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(height: 1)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var packedPlaces: (leading: [Place], trailing: [Place]) {
+        NotchTabPack.split(
+            places: store.places,
+            leftCap: chrome.leftCap,
+            widthOf: { PlaceTab.estimatedWidth(for: $0) }
+        )
+    }
+
+    private func tabStrip(_ places: [Place]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                ForEach(store.places) { place in
+                ForEach(places) { place in
                     PlaceTab(
                         place: place,
                         state: store.tabStates[place.id] ?? .idle,
@@ -194,6 +236,13 @@ private struct PlaceTab: View {
         .overlay(
             Capsule().strokeBorder(selected ? Color.accentColor.opacity(0.5) : Color.clear)
         )
+    }
+
+    static func estimatedWidth(for place: Place) -> CGFloat {
+        let text = (place.displayLabel as NSString).size(withAttributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+        ]).width
+        return 8 + 7 + 6 + text + 8
     }
 
     private var dotColor: Color {

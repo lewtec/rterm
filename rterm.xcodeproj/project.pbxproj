@@ -17,14 +17,17 @@
 		2E0F2E61B6CB66A439A9C75A /* AttachExitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 844DA7142EB561906510A8DF /* AttachExitTests.swift */; };
 		3AC9A88932D1F2245FA400BE /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 09CC7473527A224DBEF5778D /* SwiftTerm */; };
 		3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13FB0B0803CF923FEA81135A /* FailureOverlay.swift */; };
+		46A0E729A9E10FC645027BBC /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */; };
 		4DF6D14C0276B63682AF32E5 /* TabState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 934A08F963745061B6816150 /* TabState.swift */; };
 		55D505910E4B25A0651B2F49 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE03EF4B8DC774F5795F778D /* RootView.swift */; };
+		5F9E1CFBB755E7A2A788B988 /* NotchTabPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */; };
 		616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */; };
 		8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D918CE205CCF37284CC57 /* AppStore.swift */; };
 		90E55D7616C271F98D451669 /* CatalogIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD851CE8251960231DDA80C2 /* CatalogIO.swift */; };
 		9E2F750DB2A1567F5EE56FF2 /* AppStoreSleepTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F228290586DF8D0BED89FA6 /* AppStoreSleepTests.swift */; };
 		A8346612A479CF038F9373EA /* CatalogDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75902058234193BBD87886FC /* CatalogDocument.swift */; };
 		B59A5FC09D0E9E5289576DB7 /* RtermApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F304BAF27B86FA24B0F6217A /* RtermApp.swift */; };
+		D69C2A0CD7B282AE61DCED26 /* NotchTabPackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */; };
 		D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */; };
 		DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */; };
 /* End PBXBuildFile section */
@@ -42,7 +45,9 @@
 /* Begin PBXFileReference section */
 		13FB0B0803CF923FEA81135A /* FailureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FailureOverlay.swift; sourceTree = "<group>"; };
 		1EBB72640D125653205D9483 /* DriverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTests.swift; sourceTree = "<group>"; };
+		293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchTabPack.swift; sourceTree = "<group>"; };
 		2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExit.swift; sourceTree = "<group>"; };
+		302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
 		58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = rtermTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogPaths.swift; sourceTree = "<group>"; };
 		6F228290586DF8D0BED89FA6 /* AppStoreSleepTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreSleepTests.swift; sourceTree = "<group>"; };
@@ -56,6 +61,7 @@
 		934A08F963745061B6816150 /* TabState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabState.swift; sourceTree = "<group>"; };
 		A95A6A4486807E4278708C64 /* rterm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rterm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3239F057545DA582C4DA868 /* Place.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Place.swift; sourceTree = "<group>"; };
+		C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchTabPackTests.swift; sourceTree = "<group>"; };
 		C10D918CE205CCF37284CC57 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCodecTests.swift; sourceTree = "<group>"; };
 		CE03EF4B8DC774F5795F778D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -140,8 +146,10 @@
 			isa = PBXGroup;
 			children = (
 				13FB0B0803CF923FEA81135A /* FailureOverlay.swift */,
+				293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */,
 				72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */,
 				CE03EF4B8DC774F5795F778D /* RootView.swift */,
+				302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -162,6 +170,7 @@
 				844DA7142EB561906510A8DF /* AttachExitTests.swift */,
 				C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */,
 				1EBB72640D125653205D9483 /* DriverTests.swift */,
+				C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -269,11 +278,13 @@
 				D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */,
 				2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */,
 				3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */,
+				5F9E1CFBB755E7A2A788B988 /* NotchTabPack.swift in Sources */,
 				26C887D05A6FEA60AFC5085A /* Place.swift in Sources */,
 				616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */,
 				55D505910E4B25A0651B2F49 /* RootView.swift in Sources */,
 				B59A5FC09D0E9E5289576DB7 /* RtermApp.swift in Sources */,
 				4DF6D14C0276B63682AF32E5 /* TabState.swift in Sources */,
+				46A0E729A9E10FC645027BBC /* WindowChrome.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -285,6 +296,7 @@
 				2E0F2E61B6CB66A439A9C75A /* AttachExitTests.swift in Sources */,
 				DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */,
 				1860C8A1ED7272D4E5718DB9 /* DriverTests.swift in Sources */,
+				D69C2A0CD7B282AE61DCED26 /* NotchTabPackTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -310,6 +322,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSMinimumSystemVersion = 14.0;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026";
+				INFOPLIST_KEY_NSPrefersDisplaySafeAreaCompatibilityMode = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -495,6 +508,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSMinimumSystemVersion = 14.0;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026";
+				INFOPLIST_KEY_NSPrefersDisplaySafeAreaCompatibilityMode = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
