@@ -18,6 +18,9 @@ final class AppStore: ObservableObject {
         self.catalogIO = catalogIO
         loadFromDisk(creatingIfMissing: true)
         startWatching()
+        if let selectedID {
+            select(selectedID)
+        }
     }
 
     var selectedPlace: Place? {
@@ -88,15 +91,22 @@ final class AppStore: ObservableObject {
             label: label.isEmpty ? nil : label
         )
 
+        let shouldReattach: Bool
         if let index = places.firstIndex(where: { $0.id == place.id }) {
+            shouldReattach = places[index] != place && tabStates[place.id] != .idle
             places[index] = place
         } else {
+            shouldReattach = false
             places.append(place)
             tabStates[place.id] = .idle
         }
-        selectedID = place.id
         editor = nil
         persist()
+        if shouldReattach {
+            reconnect(place.id)
+        } else {
+            select(place.id)
+        }
     }
 
     func delete(_ id: UUID) {
@@ -104,7 +114,11 @@ final class AppStore: ObservableObject {
         tabStates[id] = nil
         paneEpoch[id] = nil
         if selectedID == id {
-            selectedID = places.first?.id
+            if let next = places.first?.id {
+                select(next)
+            } else {
+                selectedID = nil
+            }
         }
         if editor?.originID == id {
             editor = nil
@@ -112,8 +126,22 @@ final class AppStore: ObservableObject {
         persist()
     }
 
-    func markFailed(_ id: UUID, message: String) {
-        tabStates[id] = .failed(message)
+    func handleExit(_ id: UUID, code: Int32?) {
+        switch AttachExit.classify(code) {
+        case .clean:
+            tabStates[id] = .idle
+        case .failed(let message):
+            tabStates[id] = .failed(message)
+        }
+    }
+
+    func hasPane(_ id: UUID) -> Bool {
+        switch tabStates[id] {
+        case .live, .failed:
+            return true
+        case .idle, .none:
+            return false
+        }
     }
 
     func revealCatalog() {

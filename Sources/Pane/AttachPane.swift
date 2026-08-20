@@ -2,8 +2,8 @@ import AppKit
 import SwiftTerm
 import SwiftUI
 
-struct LocalShellPane: NSViewRepresentable {
-    var placeID: UUID
+struct AttachPane: NSViewRepresentable {
+    var place: Place
     var onExit: (Int32?) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -13,8 +13,7 @@ struct LocalShellPane: NSViewRepresentable {
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let view = LocalProcessTerminalView(frame: .zero)
         view.processDelegate = context.coordinator
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        view.startProcess(executable: shell, args: ["-l"])
+        view.startProcess(executable: Driver.sshExecutable, args: Driver.sshArguments(for: place))
         return view
     }
 

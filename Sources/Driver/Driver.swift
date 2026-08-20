@@ -1,4 +1,6 @@
 enum Driver {
+    static let sshExecutable = "/usr/bin/ssh"
+
     static func remoteCommand(for place: Place) -> String {
         switch place.backend {
         case .herdr:

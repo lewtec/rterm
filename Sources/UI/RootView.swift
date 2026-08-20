@@ -86,44 +86,53 @@ struct RootView: View {
 
     @ViewBuilder
     private var paneArea: some View {
-        if let place = store.selectedPlace {
-            let epoch = store.paneEpoch[place.id, default: 0]
+        if store.places.isEmpty {
+            emptyCatalog
+        } else {
             ZStack {
-                LocalShellPane(
-                    placeID: place.id,
-                    onExit: { code in
-                        store.markFailed(
-                            place.id,
-                            message: "process exited" + (code.map { " (\($0))" } ?? "")
+                ForEach(store.places) { place in
+                    if store.hasPane(place.id) {
+                        let epoch = store.paneEpoch[place.id, default: 0]
+                        AttachPane(
+                            place: place,
+                            onExit: { code in
+                                store.handleExit(place.id, code: code)
+                            }
+                        )
+                        .id("\(place.id.uuidString)-\(epoch)")
+                        .opacity(store.selectedID == place.id ? 1 : 0)
+                        .allowsHitTesting(store.selectedID == place.id)
+                    }
+                }
+
+                if let place = store.selectedPlace {
+                    if store.debugOverlay {
+                        FailureOverlay(
+                            message: "debug overlay",
+                            onRetry: { store.reconnect(place.id) }
+                        )
+                    } else if case .failed(let message) = store.tabStates[place.id] {
+                        FailureOverlay(
+                            message: message,
+                            onRetry: { store.reconnect(place.id) }
                         )
                     }
-                )
-                .id("\(place.id.uuidString)-\(epoch)")
-
-                if store.debugOverlay {
-                    FailureOverlay(
-                        message: "debug overlay",
-                        onRetry: { store.reconnect(place.id) }
-                    )
-                } else if case .failed(let message) = store.tabStates[place.id] {
-                    FailureOverlay(
-                        message: message,
-                        onRetry: { store.reconnect(place.id) }
-                    )
                 }
             }
-        } else {
-            ContentUnavailableView {
-                Label("No places", systemImage: "terminal")
-            } description: {
-                Text("Add a place to attach later.")
-            } actions: {
-                Button("Add Place…") {
-                    store.beginAdd()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var emptyCatalog: some View {
+        ContentUnavailableView {
+            Label("No places", systemImage: "terminal")
+        } description: {
+            Text("Add a place to attach later.")
+        } actions: {
+            Button("Add Place…") {
+                store.beginAdd()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

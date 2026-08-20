@@ -9,14 +9,17 @@
 /* Begin PBXBuildFile section */
 		0395DA40C6AC135D653B6CC2 /* CatalogCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85FA90FD4A5EC7C6BA781244 /* CatalogCodec.swift */; };
 		06B8CF895F52398222C8DB97 /* Backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9336892250E82F5922D5962F /* Backend.swift */; };
+		15339B4A873B4E8367A79B1B /* AttachPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88EF6513994246042D5109AE /* AttachPane.swift */; };
+		1860C8A1ED7272D4E5718DB9 /* DriverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBB72640D125653205D9483 /* DriverTests.swift */; };
+		1DB417114EC95E1E350884F0 /* AttachExit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */; };
 		26C887D05A6FEA60AFC5085A /* Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3239F057545DA582C4DA868 /* Place.swift */; };
 		2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F4691BEA6EC153186C7DDB2 /* Driver.swift */; };
+		2E0F2E61B6CB66A439A9C75A /* AttachExitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 844DA7142EB561906510A8DF /* AttachExitTests.swift */; };
 		3AC9A88932D1F2245FA400BE /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 09CC7473527A224DBEF5778D /* SwiftTerm */; };
 		3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13FB0B0803CF923FEA81135A /* FailureOverlay.swift */; };
 		4DF6D14C0276B63682AF32E5 /* TabState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 934A08F963745061B6816150 /* TabState.swift */; };
 		55D505910E4B25A0651B2F49 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE03EF4B8DC774F5795F778D /* RootView.swift */; };
 		616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */; };
-		7BC15CAB21F912606441D6B6 /* LocalShellPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C86EA21120142958983BDAA /* LocalShellPane.swift */; };
 		8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D918CE205CCF37284CC57 /* AppStore.swift */; };
 		90E55D7616C271F98D451669 /* CatalogIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD851CE8251960231DDA80C2 /* CatalogIO.swift */; };
 		A8346612A479CF038F9373EA /* CatalogDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75902058234193BBD87886FC /* CatalogDocument.swift */; };
@@ -37,13 +40,16 @@
 
 /* Begin PBXFileReference section */
 		13FB0B0803CF923FEA81135A /* FailureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FailureOverlay.swift; sourceTree = "<group>"; };
-		2C86EA21120142958983BDAA /* LocalShellPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellPane.swift; sourceTree = "<group>"; };
+		1EBB72640D125653205D9483 /* DriverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTests.swift; sourceTree = "<group>"; };
+		2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExit.swift; sourceTree = "<group>"; };
 		58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = rtermTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogPaths.swift; sourceTree = "<group>"; };
 		72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceEditorSheet.swift; sourceTree = "<group>"; };
 		75902058234193BBD87886FC /* CatalogDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDocument.swift; sourceTree = "<group>"; };
 		7F4691BEA6EC153186C7DDB2 /* Driver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Driver.swift; sourceTree = "<group>"; };
+		844DA7142EB561906510A8DF /* AttachExitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExitTests.swift; sourceTree = "<group>"; };
 		85FA90FD4A5EC7C6BA781244 /* CatalogCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCodec.swift; sourceTree = "<group>"; };
+		88EF6513994246042D5109AE /* AttachPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachPane.swift; sourceTree = "<group>"; };
 		9336892250E82F5922D5962F /* Backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backend.swift; sourceTree = "<group>"; };
 		934A08F963745061B6816150 /* TabState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabState.swift; sourceTree = "<group>"; };
 		A95A6A4486807E4278708C64 /* rterm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rterm.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -79,7 +85,7 @@
 		3FEDE17E80AD02A24CE4F36A /* Pane */ = {
 			isa = PBXGroup;
 			children = (
-				2C86EA21120142958983BDAA /* LocalShellPane.swift */,
+				88EF6513994246042D5109AE /* AttachPane.swift */,
 			);
 			path = Pane;
 			sourceTree = "<group>";
@@ -141,6 +147,7 @@
 		B567DC60F3D881273A3BD971 /* Attach */ = {
 			isa = PBXGroup;
 			children = (
+				2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */,
 				934A08F963745061B6816150 /* TabState.swift */,
 			);
 			path = Attach;
@@ -149,7 +156,9 @@
 		C83053AA64F54DBDEC1106B6 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				844DA7142EB561906510A8DF /* AttachExitTests.swift */,
 				C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */,
+				1EBB72640D125653205D9483 /* DriverTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -248,6 +257,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */,
+				1DB417114EC95E1E350884F0 /* AttachExit.swift in Sources */,
+				15339B4A873B4E8367A79B1B /* AttachPane.swift in Sources */,
 				06B8CF895F52398222C8DB97 /* Backend.swift in Sources */,
 				0395DA40C6AC135D653B6CC2 /* CatalogCodec.swift in Sources */,
 				A8346612A479CF038F9373EA /* CatalogDocument.swift in Sources */,
@@ -255,7 +266,6 @@
 				D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */,
 				2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */,
 				3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */,
-				7BC15CAB21F912606441D6B6 /* LocalShellPane.swift in Sources */,
 				26C887D05A6FEA60AFC5085A /* Place.swift in Sources */,
 				616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */,
 				55D505910E4B25A0651B2F49 /* RootView.swift in Sources */,
@@ -268,7 +278,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2E0F2E61B6CB66A439A9C75A /* AttachExitTests.swift in Sources */,
 				DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */,
+				1860C8A1ED7272D4E5718DB9 /* DriverTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
