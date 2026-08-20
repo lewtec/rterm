@@ -13,14 +13,7 @@ struct RootView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                HStack(spacing: 0) {
-                    tabStrip
-                    Spacer(minLength: 24)
-                    addPlaceButton
-                }
-                .frame(maxWidth: .infinity)
-            }
+            toolbarContent
         }
         .sheet(isPresented: editorPresented) {
             PlaceEditorSheet()
@@ -56,6 +49,27 @@ struct RootView: View {
         }
         .padding(8)
         .background(Color.orange.opacity(0.25))
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            ToolbarItem(placement: .navigation) {
+                tabStrip
+                    .buttonStyle(.plain)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.flexible)
+        } else {
+            ToolbarItem(placement: .navigation) {
+                tabStrip
+                    .buttonStyle(.plain)
+            }
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            addPlaceButton
+        }
     }
 
     private var tabStrip: some View {
