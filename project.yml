@@ -35,6 +35,23 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: Copyright © 2026
         INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
         COMBINE_HIDPI_IMAGES: YES
+        ENABLE_TESTABILITY: YES
     dependencies:
       - package: SwiftTerm
         product: SwiftTerm
+    scheme:
+      testTargets:
+        - rtermTests
+  rtermTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: rterm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: br.tec.lew.rterm.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/rterm.app/Contents/MacOS/rterm"
+        BUNDLE_LOADER: "$(TEST_HOST)"

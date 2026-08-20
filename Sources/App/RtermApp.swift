@@ -31,6 +31,12 @@ struct RtermApp: App {
                 Button("Toggle Debug Overlay") {
                     store.debugOverlay.toggle()
                 }
+
+                Divider()
+
+                Button("Reveal Catalog in Finder") {
+                    store.revealCatalog()
+                }
             }
         }
     }

@@ -5,6 +5,9 @@ struct RootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let catalogError = store.catalogError {
+                catalogBanner(catalogError)
+            }
             tabStrip
             Divider()
             paneArea
@@ -21,6 +24,23 @@ struct RootView: View {
             get: { store.editor != nil },
             set: { if !$0 { store.editor = nil } }
         )
+    }
+
+    private func catalogBanner(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text(message)
+                .textSelection(.enabled)
+            Spacer()
+            Button("Reveal") {
+                store.revealCatalog()
+            }
+            Button("Reload") {
+                store.reloadFromDisk()
+            }
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.25))
     }
 
     private var tabStrip: some View {

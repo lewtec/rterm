@@ -9,3 +9,8 @@ run = "xcodegen generate"
 description = "Debug-build the Mac app"
 run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation build"
 depends = ["generate"]
+
+[tasks.test]
+description = "Run catalog unit tests"
+run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation test"
+depends = ["generate"]

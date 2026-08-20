@@ -1,21 +1,23 @@
+import AppKit
 import Foundation
 import SwiftUI
 
 @MainActor
 final class AppStore: ObservableObject {
-    @Published var places: [Place]
+    @Published var places: [Place] = []
     @Published var selectedID: UUID?
     @Published var tabStates: [UUID: TabState] = [:]
     @Published var paneEpoch: [UUID: Int] = [:]
     @Published var editor: PlaceEditorState?
     @Published var debugOverlay = false
+    @Published var catalogError: String?
 
-    init(places: [Place] = AppStore.fixturePlaces()) {
-        self.places = places
-        self.selectedID = places.first?.id
-        for place in places {
-            tabStates[place.id] = .idle
-        }
+    private let catalogIO: CatalogIO
+
+    init(catalogIO: CatalogIO = CatalogIO()) {
+        self.catalogIO = catalogIO
+        loadFromDisk(creatingIfMissing: true)
+        startWatching()
     }
 
     var selectedPlace: Place? {
@@ -94,6 +96,7 @@ final class AppStore: ObservableObject {
         }
         selectedID = place.id
         editor = nil
+        persist()
     }
 
     func delete(_ id: UUID) {
@@ -106,10 +109,82 @@ final class AppStore: ObservableObject {
         if editor?.originID == id {
             editor = nil
         }
+        persist()
     }
 
     func markFailed(_ id: UUID, message: String) {
         tabStates[id] = .failed(message)
+    }
+
+    func revealCatalog() {
+        do {
+            try catalogIO.prepareDirectory()
+            if !catalogIO.fileExists() {
+                persist()
+            }
+        } catch {
+            catalogError = error.localizedDescription
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([CatalogPaths.placesFile])
+    }
+
+    func reloadFromDisk() {
+        loadFromDisk(creatingIfMissing: false)
+    }
+
+    private func loadFromDisk(creatingIfMissing: Bool) {
+        do {
+            try catalogIO.prepareDirectory()
+            if !catalogIO.fileExists() {
+                if creatingIfMissing {
+                    applyPlaces(Self.fixturePlaces(), selectFirst: true)
+                    persist()
+                }
+                return
+            }
+            let document = try catalogIO.load()
+            applyPlaces(document.places, selectFirst: selectedID == nil)
+            catalogError = nil
+        } catch {
+            catalogError = error.localizedDescription
+        }
+    }
+
+    private func persist() {
+        do {
+            try catalogIO.save(
+                CatalogDocument(version: CatalogCodec.currentVersion, places: places)
+            )
+            catalogError = nil
+        } catch {
+            catalogError = error.localizedDescription
+        }
+    }
+
+    private func applyPlaces(_ incoming: [Place], selectFirst: Bool) {
+        let incomingIDs = Set(incoming.map(\.id))
+        tabStates = tabStates.filter { incomingIDs.contains($0.key) }
+        paneEpoch = paneEpoch.filter { incomingIDs.contains($0.key) }
+        for place in incoming where tabStates[place.id] == nil {
+            tabStates[place.id] = .idle
+        }
+        places = incoming
+        if selectFirst || selectedID.map(incomingIDs.contains) != true {
+            selectedID = incoming.first?.id
+        }
+    }
+
+    private func startWatching() {
+        do {
+            try catalogIO.startWatching { [weak self] in
+                Task { @MainActor in
+                    self?.reloadFromDisk()
+                }
+            }
+        } catch {
+            catalogError = error.localizedDescription
+        }
     }
 
     static func fixturePlaces() -> [Place] {

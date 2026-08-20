@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0395DA40C6AC135D653B6CC2 /* CatalogCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85FA90FD4A5EC7C6BA781244 /* CatalogCodec.swift */; };
 		06B8CF895F52398222C8DB97 /* Backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9336892250E82F5922D5962F /* Backend.swift */; };
 		26C887D05A6FEA60AFC5085A /* Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3239F057545DA582C4DA868 /* Place.swift */; };
 		2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F4691BEA6EC153186C7DDB2 /* Driver.swift */; };
@@ -17,23 +18,41 @@
 		616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */; };
 		7BC15CAB21F912606441D6B6 /* LocalShellPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C86EA21120142958983BDAA /* LocalShellPane.swift */; };
 		8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D918CE205CCF37284CC57 /* AppStore.swift */; };
+		90E55D7616C271F98D451669 /* CatalogIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD851CE8251960231DDA80C2 /* CatalogIO.swift */; };
+		A8346612A479CF038F9373EA /* CatalogDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75902058234193BBD87886FC /* CatalogDocument.swift */; };
 		B59A5FC09D0E9E5289576DB7 /* RtermApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F304BAF27B86FA24B0F6217A /* RtermApp.swift */; };
 		D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */; };
+		DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6BAEC38784E1BB9C6013E982 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 66AA57701FAF4C355EC7F380 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 22C1DED586B33E47D88CAE44;
+			remoteInfo = rterm;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		13FB0B0803CF923FEA81135A /* FailureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FailureOverlay.swift; sourceTree = "<group>"; };
 		2C86EA21120142958983BDAA /* LocalShellPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellPane.swift; sourceTree = "<group>"; };
+		58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = rtermTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogPaths.swift; sourceTree = "<group>"; };
 		72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceEditorSheet.swift; sourceTree = "<group>"; };
+		75902058234193BBD87886FC /* CatalogDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDocument.swift; sourceTree = "<group>"; };
 		7F4691BEA6EC153186C7DDB2 /* Driver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Driver.swift; sourceTree = "<group>"; };
+		85FA90FD4A5EC7C6BA781244 /* CatalogCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCodec.swift; sourceTree = "<group>"; };
 		9336892250E82F5922D5962F /* Backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backend.swift; sourceTree = "<group>"; };
 		934A08F963745061B6816150 /* TabState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabState.swift; sourceTree = "<group>"; };
 		A95A6A4486807E4278708C64 /* rterm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rterm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3239F057545DA582C4DA868 /* Place.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Place.swift; sourceTree = "<group>"; };
 		C10D918CE205CCF37284CC57 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCodecTests.swift; sourceTree = "<group>"; };
 		CE03EF4B8DC774F5795F778D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		F304BAF27B86FA24B0F6217A /* RtermApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RtermApp.swift; sourceTree = "<group>"; };
+		FD851CE8251960231DDA80C2 /* CatalogIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogIO.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				8460BAE71F332B1F6A856CE7 /* Sources */,
+				C83053AA64F54DBDEC1106B6 /* Tests */,
 				86B7CBDD04B130B1DBFB1B4E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -68,6 +88,9 @@
 			isa = PBXGroup;
 			children = (
 				9336892250E82F5922D5962F /* Backend.swift */,
+				85FA90FD4A5EC7C6BA781244 /* CatalogCodec.swift */,
+				75902058234193BBD87886FC /* CatalogDocument.swift */,
+				FD851CE8251960231DDA80C2 /* CatalogIO.swift */,
 				6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */,
 				B3239F057545DA582C4DA868 /* Place.swift */,
 			);
@@ -100,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				A95A6A4486807E4278708C64 /* rterm.app */,
+				58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -122,6 +146,14 @@
 			path = Attach;
 			sourceTree = "<group>";
 		};
+		C83053AA64F54DBDEC1106B6 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
 		EF130C33E3E960ADD8F0A5B5 /* Driver */ = {
 			isa = PBXGroup;
 			children = (
@@ -133,6 +165,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0C95A983710FB3AAAFF6268C /* rtermTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 497353AAB1E9204ACD6DF999 /* Build configuration list for PBXNativeTarget "rtermTests" */;
+			buildPhases = (
+				CBF2DF80D06B3C3A959363BB /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F015902F5780A5E6509546ED /* PBXTargetDependency */,
+			);
+			name = rtermTests;
+			packageProductDependencies = (
+			);
+			productName = rtermTests;
+			productReference = 58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		22C1DED586B33E47D88CAE44 /* rterm */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AB76E1739504BC4E98C9D7B4 /* Build configuration list for PBXNativeTarget "rterm" */;
@@ -161,6 +211,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					0C95A983710FB3AAAFF6268C = {
+						DevelopmentTeam = "";
+					};
 					22C1DED586B33E47D88CAE44 = {
 						DevelopmentTeam = "";
 					};
@@ -184,6 +237,7 @@
 			projectRoot = "";
 			targets = (
 				22C1DED586B33E47D88CAE44 /* rterm */,
+				0C95A983710FB3AAAFF6268C /* rtermTests */,
 			);
 		};
 /* End PBXProject section */
@@ -195,6 +249,9 @@
 			files = (
 				8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */,
 				06B8CF895F52398222C8DB97 /* Backend.swift in Sources */,
+				0395DA40C6AC135D653B6CC2 /* CatalogCodec.swift in Sources */,
+				A8346612A479CF038F9373EA /* CatalogDocument.swift in Sources */,
+				90E55D7616C271F98D451669 /* CatalogIO.swift in Sources */,
 				D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */,
 				2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */,
 				3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */,
@@ -207,7 +264,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CBF2DF80D06B3C3A959363BB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F015902F5780A5E6509546ED /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 22C1DED586B33E47D88CAE44 /* rterm */;
+			targetProxy = 6BAEC38784E1BB9C6013E982 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		45B71B88D29AB410DB882F6C /* Release */ = {
@@ -216,6 +289,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_TESTABILITY = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = rterm;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSMinimumSystemVersion = 14.0;
@@ -230,6 +304,23 @@
 				SDKROOT = macosx;
 			};
 			name = Release;
+		};
+		4A0DE73D38CFB40FF6145CFB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = br.tec.lew.rterm.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/rterm.app/Contents/MacOS/rterm";
+			};
+			name = Debug;
 		};
 		53CD4DB9DB853BCEABB7C10B /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -299,6 +390,23 @@
 			};
 			name = Debug;
 		};
+		6D5586A5CB63FB4650E7E678 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = br.tec.lew.rterm.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/rterm.app/Contents/MacOS/rterm";
+			};
+			name = Release;
+		};
 		A8F1A779CB7C80BA76FF3CBE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -366,6 +474,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_TESTABILITY = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = rterm;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSMinimumSystemVersion = 14.0;
@@ -389,6 +498,15 @@
 			buildConfigurations = (
 				53CD4DB9DB853BCEABB7C10B /* Debug */,
 				A8F1A779CB7C80BA76FF3CBE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		497353AAB1E9204ACD6DF999 /* Build configuration list for PBXNativeTarget "rtermTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A0DE73D38CFB40FF6145CFB /* Debug */,
+				6D5586A5CB63FB4650E7E678 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
