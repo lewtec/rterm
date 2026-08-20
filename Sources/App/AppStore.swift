@@ -34,6 +34,11 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func selectPlace(at index: Int) {
+        guard places.indices.contains(index) else { return }
+        select(places[index].id)
+    }
+
     func reconnect(_ id: UUID) {
         paneEpoch[id, default: 0] += 1
         tabStates[id] = .live

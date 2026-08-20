@@ -9,11 +9,15 @@ struct RootView: View {
             if let catalogError = store.catalogError {
                 catalogBanner(catalogError)
             }
-            tabStrip
-            Divider()
             paneArea
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                tabStrip
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
         .sheet(isPresented: editorPresented) {
             PlaceEditorSheet()
                 .environmentObject(store)
@@ -76,8 +80,7 @@ struct RootView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 4)
             }
             Button {
                 store.beginAdd()
