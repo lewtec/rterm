@@ -4,7 +4,9 @@ A Mac app that supervises detachable terminal sessions. It is not a general loca
 
 Each tab is a **place**: a saved attach target. Click a tab to attach. Sleep drops the local process. The remote herdr, tmux, or screen session keeps running. Wake does not reconnect. Click the tab or choose Reconnect.
 
-![rterm window with place tabs in the title bar](docs/screenshot.png)
+![rterm windowed: place tabs in the title bar](docs/screenshot-windowed.png)
+
+![rterm fill-screen: place tabs wrap around the camera](docs/screenshot-fill.png)
 
 ## Places
 
