@@ -89,7 +89,7 @@ struct RootView: View {
         return ZStack {
             Color(nsColor: .windowBackgroundColor)
             HStack(spacing: 0) {
-                Color.clear.frame(width: chrome.leftPad)
+                trafficLights
                 tabStrip(packed.leading)
                     .frame(maxWidth: chrome.leftCap, alignment: .leading)
                 Spacer(minLength: chrome.notchWidth)
@@ -143,6 +143,22 @@ struct RootView: View {
                 }
             }
         }
+    }
+
+    private var trafficLights: some View {
+        HStack(spacing: 8) {
+            TrafficDot(color: Color(red: 1, green: 0.37, blue: 0.34)) {
+                NSApp.keyWindow?.performClose(nil)
+            }
+            TrafficDot(color: Color(red: 1, green: 0.74, blue: 0.18)) {
+                NSApp.keyWindow?.miniaturize(nil)
+            }
+            TrafficDot(color: Color(red: 0.16, green: 0.78, blue: 0.25)) {
+                chrome.toggleFillScreen()
+            }
+        }
+        .padding(.leading, 12)
+        .frame(width: WindowChrome.trafficLightWidth, alignment: .leading)
     }
 
     private var addPlaceButton: some View {
@@ -214,6 +230,20 @@ struct RootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct TrafficDot: View {
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(color)
+                .frame(width: 12, height: 12)
+        }
+        .buttonStyle(.plain)
     }
 }
 

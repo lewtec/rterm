@@ -27,16 +27,19 @@ final class WindowChrome: NSObject, ObservableObject {
     private var savedZoomAction: Selector?
     private var escapeMonitor: Any?
 
-    func update(from window: NSWindow?) {
+    func attach(to window: NSWindow?) {
         attachedWindow = window
         installCollectionBehavior(on: window)
         installZoomHook(on: window)
-        if isFillScreen, let window {
-            pinToScreen(window)
-            refreshGeometry(from: window)
-        } else {
-            clearGeometry()
+    }
+
+    func handleBoundsChange(of window: NSWindow?) {
+        guard isFillScreen, let window else {
+            return
         }
+        attachedWindow = window
+        pinFrame(window)
+        refreshGeometry(from: window)
     }
 
     @objc func toggleFillScreen() {
@@ -64,7 +67,9 @@ final class WindowChrome: NSObject, ObservableObject {
         isFillScreen = true
 
         NSApp.presentationOptions = [.autoHideDock, .autoHideMenuBar]
-        window.styleMask.insert(.fullSizeContentView)
+        var mask = window.styleMask
+        mask.remove([.titled, .closable, .miniaturizable, .resizable])
+        window.styleMask = mask.union([.borderless, .fullSizeContentView])
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.hasShadow = false
@@ -72,8 +77,8 @@ final class WindowChrome: NSObject, ObservableObject {
         window.backgroundColor = .windowBackgroundColor
         window.setFrame(screen.frame, display: true)
         installEscapeMonitor()
-        pinToScreen(window)
         refreshGeometry(from: window)
+        focusTerminal(in: window)
     }
 
     private func exitFillScreen(_ window: NSWindow) {
@@ -88,21 +93,48 @@ final class WindowChrome: NSObject, ObservableObject {
             window.backgroundColor = savedBackground
         }
         window.setFrame(savedFrame, display: true)
+        installZoomHook(on: window)
         clearGeometry()
+        focusTerminal(in: window)
     }
 
-    private func pinToScreen(_ window: NSWindow) {
+    private func pinFrame(_ window: NSWindow) {
         guard let screen = window.screen else {
             return
         }
-        if abs(window.frame.maxY - screen.frame.maxY) > 1
-            || abs(window.frame.height - screen.frame.height) > 1
+        let target = screen.frame
+        if abs(window.frame.minX - target.minX) < 1,
+           abs(window.frame.minY - target.minY) < 1,
+           abs(window.frame.width - target.width) < 1,
+           abs(window.frame.height - target.height) < 1
         {
-            var mask = window.styleMask
-            mask.remove([.titled, .closable, .miniaturizable, .resizable])
-            window.styleMask = mask.union([.borderless, .fullSizeContentView])
-            window.setFrame(screen.frame, display: true)
+            return
         }
+        window.setFrame(target, display: true)
+    }
+
+    private func focusTerminal(in window: NSWindow) {
+        window.makeKeyAndOrderFront(nil)
+        DispatchQueue.main.async {
+            if let terminal = Self.terminalView(in: window.contentView) {
+                window.makeFirstResponder(terminal)
+            }
+        }
+    }
+
+    private static func terminalView(in view: NSView?) -> NSView? {
+        guard let view else {
+            return nil
+        }
+        if String(describing: type(of: view)).contains("LocalProcessTerminalView") {
+            return view
+        }
+        for child in view.subviews {
+            if let found = terminalView(in: child) {
+                return found
+            }
+        }
+        return nil
     }
 
     private func refreshGeometry(from window: NSWindow) {
@@ -113,24 +145,22 @@ final class WindowChrome: NSObject, ObservableObject {
             left.width > 1,
             right.width > 1
         else {
-            let pad = Self.trafficLightInset(in: window)
             apply(
                 splitActive: true,
-                leftCap: max(120, window.frame.width / 2 - pad),
+                leftCap: max(120, window.frame.width / 2 - Self.trafficLightWidth),
                 rightCap: max(120, window.frame.width / 2 - Self.plusReserve),
-                leftPad: pad,
+                leftPad: Self.trafficLightWidth,
                 notchWidth: 0,
                 rowHeight: 32
             )
             return
         }
 
-        let pad = Self.trafficLightInset(in: window)
         apply(
             splitActive: true,
-            leftCap: max(0, left.maxX - window.frame.minX - pad),
+            leftCap: max(0, left.maxX - window.frame.minX - Self.trafficLightWidth),
             rightCap: max(0, window.frame.maxX - right.minX - Self.plusReserve),
-            leftPad: pad,
+            leftPad: Self.trafficLightWidth,
             notchWidth: max(0, right.minX - left.maxX),
             rowHeight: max(left.height, window.contentView?.safeAreaInsets.top ?? 0, 28)
         )
@@ -241,24 +271,13 @@ final class WindowChrome: NSObject, ObservableObject {
     }
 
     private static let plusReserve: CGFloat = 28
+    static let trafficLightWidth: CGFloat = 78
 
     private static func optionalRect(_ rect: NSRect?) -> NSRect? {
         guard let rect, rect.width > 0, rect.height > 0 else {
             return nil
         }
         return rect
-    }
-
-    private static func trafficLightInset(in window: NSWindow) -> CGFloat {
-        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        var maxX: CGFloat = 78
-        for type in types {
-            guard let button = window.standardWindowButton(type) else {
-                continue
-            }
-            maxX = max(maxX, button.convert(button.bounds, to: nil).maxX)
-        }
-        return maxX + 8
     }
 }
 
@@ -272,24 +291,20 @@ struct WindowChromeReader: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let view = nsView as? ObserverView else {
-            return
-        }
-        view.chrome = chrome
-        view.refresh()
+        (nsView as? ObserverView)?.chrome = chrome
     }
 
     private final class ObserverView: NSView {
         var chrome: WindowChrome?
 
+        override var acceptsFirstResponder: Bool { false }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             retarget()
-            refresh()
-        }
-
-        func refresh() {
-            chrome?.update(from: window)
+            chrome?.attach(to: window)
         }
 
         private func retarget() {
@@ -314,7 +329,7 @@ struct WindowChromeReader: NSViewRepresentable {
         }
 
         @objc private func handleChange(_ notification: Notification) {
-            refresh()
+            chrome?.handleBoundsChange(of: window)
         }
     }
 }
