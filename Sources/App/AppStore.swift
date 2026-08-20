@@ -80,7 +80,6 @@ final class AppStore: ObservableObject {
         draft.user = draft.user.trimmingCharacters(in: .whitespacesAndNewlines)
         if Place.isLoopbackHost(draft.host) {
             draft.host = ""
-            draft.user = ""
         } else if draft.user.isEmpty {
             return
         }

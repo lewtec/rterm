@@ -47,13 +47,15 @@ struct Place: Identifiable, Hashable {
             return label
         }
         if isLocal {
+            let prefix = user.trimmingCharacters(in: .whitespacesAndNewlines)
+            let head = prefix.isEmpty ? "local" : prefix
             switch backend {
             case .herdr:
-                return "herdr"
+                return "\(head):herdr"
             case .tmux:
-                return "tmux(\(session ?? ""))"
+                return "\(head):tmux(\(session ?? ""))"
             case .screen:
-                return "screen(\(session ?? ""))"
+                return "\(head):screen(\(session ?? ""))"
             }
         }
         switch backend {

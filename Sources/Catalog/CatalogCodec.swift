@@ -110,13 +110,11 @@ enum CatalogCodec {
         for place in document.places {
             lines.append("[[place]]")
             lines.append("id = \(quote(place.id.uuidString))")
-            if !place.isLocal {
-                if !place.user.isEmpty {
-                    lines.append("user = \(quote(place.user))")
-                }
-                if !place.host.isEmpty {
-                    lines.append("host = \(quote(place.host))")
-                }
+            if !place.user.isEmpty {
+                lines.append("user = \(quote(place.user))")
+            }
+            if !place.isLocal, !place.host.isEmpty {
+                lines.append("host = \(quote(place.host))")
             }
             lines.append("backend = \(quote(place.backend.rawValue))")
             if place.backend != .herdr, let session = place.session, !session.isEmpty {
@@ -194,7 +192,6 @@ private struct PartialPlace {
         var trimmedUser = (user ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if Place.isLoopbackHost(trimmedHost) {
             trimmedHost = ""
-            trimmedUser = ""
         } else if trimmedUser.isEmpty {
             throw CatalogCodecError.missingField("user", line)
         }

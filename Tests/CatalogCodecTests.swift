@@ -100,11 +100,11 @@ final class CatalogCodecTests: XCTestCase {
         """
         let decoded = try CatalogCodec.decode(text)
         XCTAssertEqual(decoded.places[0].host, "")
-        XCTAssertEqual(decoded.places[0].user, "")
+        XCTAssertEqual(decoded.places[0].user, "ada")
         XCTAssertTrue(decoded.places[0].isLocal)
         let encoded = CatalogCodec.encode(decoded)
         XCTAssertFalse(encoded.contains("localhost"))
-        XCTAssertFalse(encoded.contains("user ="))
+        XCTAssertTrue(encoded.contains("user = \"ada\""))
     }
 
     func testRemotePlaceStillRequiresUser() {

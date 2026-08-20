@@ -44,7 +44,7 @@ final class DriverTests: XCTestCase {
         let launch = Driver.launch(for: place)
         XCTAssertEqual(launch.executable, Driver.localShell)
         XCTAssertEqual(launch.arguments, ["-lc", Driver.herdrAttachScript])
-        XCTAssertEqual(place.displayLabel, "herdr")
+        XCTAssertEqual(place.displayLabel, "local:herdr")
     }
 
     func testRemoteHerdrUsesSSHAndServerBinary() {
@@ -61,7 +61,7 @@ final class DriverTests: XCTestCase {
     func testLocalhostIsLocalNotUserAtLocalhost() {
         let place = Place(user: "ada", host: "localhost", backend: .herdr)
         XCTAssertTrue(place.isLocal)
-        XCTAssertEqual(place.displayLabel, "herdr")
+        XCTAssertEqual(place.displayLabel, "ada:herdr")
         XCTAssertEqual(Driver.launch(for: place).executable, Driver.localShell)
         XCTAssertNotEqual(Driver.launch(for: place).executable, Driver.sshExecutable)
     }
@@ -76,7 +76,7 @@ final class DriverTests: XCTestCase {
     func testEmptyHostTmuxLabel() {
         let place = Place(user: "", host: "  ", backend: .tmux, session: "dev")
         XCTAssertTrue(place.isLocal)
-        XCTAssertEqual(place.displayLabel, "tmux(dev)")
+        XCTAssertEqual(place.displayLabel, "local:tmux(dev)")
         XCTAssertEqual(Driver.launch(for: place).arguments, ["-lc", "tmux new-session -A -s 'dev'"])
     }
 }
