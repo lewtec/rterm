@@ -45,7 +45,7 @@ final class DriverTests: XCTestCase {
         XCTAssertEqual(launch.executable, Driver.localShell)
         XCTAssertEqual(launch.arguments, ["-lc", Driver.herdrAttachScript])
         XCTAssertEqual(launch.currentDirectory, NSHomeDirectory())
-        XCTAssertEqual(place.displayLabel, "\(NSUserName())@localhost")
+        XCTAssertEqual(place.displayLabel, "\(NSUserName())@localhost:herdr")
     }
 
     func testRemoteHerdrUsesSSHAndServerBinary() {
@@ -62,7 +62,7 @@ final class DriverTests: XCTestCase {
     func testLocalhostIsLocalNotUserAtLocalhost() {
         let place = Place(user: "ada", host: "localhost", backend: .herdr)
         XCTAssertTrue(place.isLocal)
-        XCTAssertEqual(place.displayLabel, "ada@localhost")
+        XCTAssertEqual(place.displayLabel, "ada@localhost:herdr")
         XCTAssertEqual(Driver.launch(for: place).executable, Driver.localShell)
         XCTAssertNotEqual(Driver.launch(for: place).executable, Driver.sshExecutable)
     }

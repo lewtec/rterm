@@ -47,13 +47,13 @@ A place is:
 
 herdr has no session name in rterm.
 
-An empty host or a loopback host (`localhost`, `127.0.0.1`, `::1`) is a local place. Attach runs the mux on this Mac as the Mac login user. Do not use SSH. Persist no host. If user is empty, use `NSUserName()`. Default label is `user@localhost`.
+An empty host or a loopback host (`localhost`, `127.0.0.1`, `::1`) is a local place. Attach runs the mux on this Mac as the Mac login user. Do not use SSH. Persist no host. If user is empty, use `NSUserName()`. Default label is `user@localhost:herdr`.
 
 If the user leaves the label empty, the default is:
 
-- remote herdr: `user@host`
+- remote herdr: `user@host:herdr`
 - remote tmux or screen: `user@host:tmux(foo)` or `user@host:screen(foo)`
-- local herdr: `user@localhost` (user defaults to the Mac login name)
+- local herdr: `user@localhost:herdr` (user defaults to the Mac login name)
 - local tmux or screen: `user@localhost:tmux(foo)`
 
 Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local.

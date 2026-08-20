@@ -51,7 +51,7 @@ struct Place: Identifiable, Hashable {
         let core = shownUser.isEmpty ? shownHost : "\(shownUser)@\(shownHost)"
         switch backend {
         case .herdr:
-            return core
+            return "\(core):herdr"
         case .tmux:
             return "\(core):tmux(\(session ?? ""))"
         case .screen:
