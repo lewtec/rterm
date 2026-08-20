@@ -25,12 +25,13 @@ final class WindowChrome: NSObject, ObservableObject {
     private weak var zoomButton: NSButton?
     private var savedZoomTarget: AnyObject?
     private var savedZoomAction: Selector?
-    private var escapeMonitor: Any?
+    private var keyMonitor: Any?
 
     func attach(to window: NSWindow?) {
         attachedWindow = window
         installCollectionBehavior(on: window)
         installZoomHook(on: window)
+        installKeyMonitor()
     }
 
     func handleScreenChange(of window: NSWindow?) {
@@ -43,19 +44,18 @@ final class WindowChrome: NSObject, ObservableObject {
     }
 
     func handleKeyChange(of window: NSWindow?) {
-        guard let window, window.attachedSheet == nil else {
+        guard let window, window.isKeyWindow, window.attachedSheet == nil else {
             return
         }
-        if window.isKeyWindow {
-            restoreTerminalFocus(in: window)
-        } else {
-            resignTerminal(in: window)
-        }
+        restoreTerminalFocus(in: window)
     }
 
     func focusTerminalIfKey() {
-        guard let window = attachedWindow ?? NSApp.keyWindow, window.isKeyWindow else {
+        guard let window = attachedWindow ?? NSApp.mainWindow ?? NSApp.keyWindow else {
             return
+        }
+        if !window.isKeyWindow {
+            window.makeKeyAndOrderFront(nil)
         }
         restoreTerminalFocus(in: window)
     }
@@ -94,13 +94,11 @@ final class WindowChrome: NSObject, ObservableObject {
         window.isMovable = false
         window.backgroundColor = .windowBackgroundColor
         window.setFrame(screen.frame, display: true)
-        installEscapeMonitor()
         refreshGeometry(from: window)
         focusTerminal(in: window)
     }
 
     private func exitFillScreen(_ window: NSWindow) {
-        removeEscapeMonitor()
         isFillScreen = false
         NSApp.presentationOptions = savedPresentation
         window.styleMask = savedStyleMask
@@ -138,22 +136,21 @@ final class WindowChrome: NSObject, ObservableObject {
 
     private func restoreTerminalFocus(in window: NSWindow) {
         DispatchQueue.main.async {
-            guard window.isKeyWindow, window.attachedSheet == nil else {
-                return
-            }
-            if let terminal = Self.visibleTerminal(in: window.contentView) {
-                window.makeFirstResponder(terminal)
-            }
+            self.ensureTerminalFirstResponder(in: window)
         }
     }
 
-    private func resignTerminal(in window: NSWindow) {
-        guard let responder = window.firstResponder as? NSView,
-              Self.isTerminal(responder)
-        else {
+    private func ensureTerminalFirstResponder(in window: NSWindow? = nil) {
+        let window = window ?? attachedWindow
+        guard let window, window.isKeyWindow, window.attachedSheet == nil else {
             return
         }
-        window.makeFirstResponder(nil)
+        if let current = window.firstResponder as? NSView, Self.isTerminal(current), !current.isHidden {
+            return
+        }
+        if let terminal = Self.visibleTerminal(in: window.contentView) {
+            window.makeFirstResponder(terminal)
+        }
     }
 
     private static func visibleTerminal(in view: NSView?) -> NSView? {
@@ -253,24 +250,21 @@ final class WindowChrome: NSObject, ObservableObject {
         savedZoomAction = nil
     }
 
-    private func installEscapeMonitor() {
-        guard escapeMonitor == nil else {
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else {
             return
         }
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.keyCode == 53, self.isFillScreen else {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else {
                 return event
             }
-            self.toggleFillScreen()
-            return nil
+            if event.keyCode == 53, self.isFillScreen {
+                self.toggleFillScreen()
+                return nil
+            }
+            self.ensureTerminalFirstResponder()
+            return event
         }
-    }
-
-    private func removeEscapeMonitor() {
-        if let escapeMonitor {
-            NSEvent.removeMonitor(escapeMonitor)
-        }
-        escapeMonitor = nil
     }
 
     private func apply(
@@ -367,12 +361,6 @@ struct WindowChromeReader: NSViewRepresentable {
                 self,
                 selector: #selector(handleKey),
                 name: NSWindow.didBecomeKeyNotification,
-                object: window
-            )
-            center.addObserver(
-                self,
-                selector: #selector(handleKey),
-                name: NSWindow.didResignKeyNotification,
                 object: window
             )
         }
