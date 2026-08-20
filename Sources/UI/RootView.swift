@@ -13,11 +13,13 @@ struct RootView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                tabStrip
-            }
-            ToolbarItem(placement: .primaryAction) {
-                addPlaceButton
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 0) {
+                    tabStrip
+                    Spacer(minLength: 24)
+                    addPlaceButton
+                }
+                .frame(maxWidth: .infinity)
             }
         }
         .sheet(isPresented: editorPresented) {
