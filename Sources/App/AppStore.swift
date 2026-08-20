@@ -235,10 +235,8 @@ final class AppStore: ObservableObject {
     }
 
     static func fixturePlaces() -> [Place] {
-        let user = NSUserName()
-        return [
-            Place(user: user, host: "riverwood", backend: .herdr),
-            Place(user: user, host: "whiterun", backend: .tmux, session: "foo"),
+        [
+            Place(user: NSUserName(), host: "", backend: .herdr),
         ]
     }
 }

@@ -23,12 +23,10 @@ final class AppStoreSleepTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let io = CatalogIO(fileURL: directory.appendingPathComponent("places.toml"))
         let store = AppStore(catalogIO: io)
-        guard store.places.count >= 2 else {
-            throw XCTSkip("need two fixture places")
-        }
-        store.selectPlace(at: 1)
-        XCTAssertEqual(store.selectedID, store.places[1].id)
+        let first = try XCTUnwrap(store.places.first?.id)
+        store.selectPlace(at: 0)
+        XCTAssertEqual(store.selectedID, first)
         store.selectPlace(at: 99)
-        XCTAssertEqual(store.selectedID, store.places[1].id)
+        XCTAssertEqual(store.selectedID, first)
     }
 }
