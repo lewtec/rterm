@@ -26,6 +26,7 @@ final class WindowChrome: NSObject, ObservableObject {
     private var savedZoomTarget: AnyObject?
     private var savedZoomAction: Selector?
     private var keyMonitor: Any?
+    private var windowedTitlebarApplied = false
 
     func attach(to window: NSWindow?) {
         attachedWindow = window
@@ -46,14 +47,59 @@ final class WindowChrome: NSObject, ObservableObject {
         if window.styleMask != mask {
             window.styleMask = mask
         }
+        if !windowedTitlebarApplied {
+            windowedTitlebarApplied = true
+            DispatchQueue.main.async { [weak self] in
+                self?.rebuildWindowedTitlebar()
+            }
+        }
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = ""
-        window.toolbar = nil
-        window.toolbarStyle = .unifiedCompact
-        DispatchQueue.main.async { [weak self] in
-            self?.objectWillChange.send()
+        if window.toolbar != nil {
+            window.toolbar = nil
         }
+        window.toolbarStyle = .unifiedCompact
+        syncWindowedRowHeight(from: window)
+    }
+
+    private func rebuildWindowedTitlebar() {
+        guard !isFillScreen, let window = attachedWindow else {
+            return
+        }
+        var mask = window.styleMask
+        mask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
+        window.styleMask = mask.subtracting(.titled)
+        window.styleMask = mask
+        applyWindowedTitlebar(on: window)
+    }
+
+    private func syncWindowedRowHeight(from window: NSWindow) {
+        guard !isFillScreen else {
+            return
+        }
+        let height = Self.windowedRowHeight(for: window)
+        guard !Self.capsAlmostEqual(rowHeight, height) else {
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isFillScreen else {
+                return
+            }
+            if !Self.capsAlmostEqual(self.rowHeight, height) {
+                self.rowHeight = height
+            }
+        }
+    }
+
+    private static func windowedRowHeight(for window: NSWindow) -> CGFloat {
+        if let button = window.standardWindowButton(.closeButton),
+           let container = button.superview
+        {
+            return max(container.frame.height, 28)
+        }
+        let measured = window.frame.height - window.contentLayoutRect.height
+        return max(measured, 28)
     }
 
     func handleScreenChange(of window: NSWindow?) {
@@ -123,14 +169,13 @@ final class WindowChrome: NSObject, ObservableObject {
     private func exitFillScreen(_ window: NSWindow) {
         isFillScreen = false
         NSApp.presentationOptions = savedPresentation
-        window.styleMask = savedStyleMask
-        window.titlebarAppearsTransparent = savedTransparent
         window.hasShadow = savedHasShadow
         window.isMovable = savedMovable
         if let savedBackground {
             window.backgroundColor = savedBackground
         }
         window.setFrame(savedFrame, display: true)
+        windowedTitlebarApplied = false
         applyWindowedTitlebar(on: window)
         installZoomHook(on: window)
         clearGeometry()

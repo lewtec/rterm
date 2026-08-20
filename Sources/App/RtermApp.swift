@@ -14,6 +14,7 @@ struct RtermApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: 960, height: 600)
+        .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
