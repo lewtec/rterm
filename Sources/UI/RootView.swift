@@ -28,6 +28,9 @@ struct RootView: View {
             PlaceEditorSheet()
                 .environmentObject(store)
         }
+        .onChange(of: store.selectedID) { _, _ in
+            chrome.focusTerminalIfKey()
+        }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
             store.dropAllConnections()
         }
@@ -184,6 +187,7 @@ struct RootView: View {
                         let epoch = store.paneEpoch[place.id, default: 0]
                         AttachPane(
                             place: place,
+                            active: store.selectedID == place.id,
                             onExit: { code in
                                 store.handleExit(place.id, code: code)
                             }

@@ -4,6 +4,7 @@ import SwiftUI
 
 struct AttachPane: NSViewRepresentable {
     var place: Place
+    var active: Bool
     var onExit: (Int32?) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -19,12 +20,19 @@ struct AttachPane: NSViewRepresentable {
             args: launch.arguments,
             currentDirectory: launch.currentDirectory
         )
+        view.isHidden = !active
         return view
     }
 
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         context.coordinator.onExit = onExit
         nsView.processDelegate = context.coordinator
+        if nsView.isHidden == active {
+            if !active, nsView.window?.firstResponder === nsView {
+                nsView.window?.makeFirstResponder(nil)
+            }
+            nsView.isHidden = !active
+        }
     }
 
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {

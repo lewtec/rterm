@@ -33,13 +33,31 @@ final class WindowChrome: NSObject, ObservableObject {
         installZoomHook(on: window)
     }
 
-    func handleBoundsChange(of window: NSWindow?) {
+    func handleScreenChange(of window: NSWindow?) {
         guard isFillScreen, let window else {
             return
         }
         attachedWindow = window
         pinFrame(window)
         refreshGeometry(from: window)
+    }
+
+    func handleKeyChange(of window: NSWindow?) {
+        guard let window, window.attachedSheet == nil else {
+            return
+        }
+        if window.isKeyWindow {
+            restoreTerminalFocus(in: window)
+        } else {
+            resignTerminal(in: window)
+        }
+    }
+
+    func focusTerminalIfKey() {
+        guard let window = attachedWindow ?? NSApp.keyWindow, window.isKeyWindow else {
+            return
+        }
+        restoreTerminalFocus(in: window)
     }
 
     @objc func toggleFillScreen() {
@@ -115,26 +133,46 @@ final class WindowChrome: NSObject, ObservableObject {
 
     private func focusTerminal(in window: NSWindow) {
         window.makeKeyAndOrderFront(nil)
+        restoreTerminalFocus(in: window)
+    }
+
+    private func restoreTerminalFocus(in window: NSWindow) {
         DispatchQueue.main.async {
-            if let terminal = Self.terminalView(in: window.contentView) {
+            guard window.isKeyWindow, window.attachedSheet == nil else {
+                return
+            }
+            if let terminal = Self.visibleTerminal(in: window.contentView) {
                 window.makeFirstResponder(terminal)
             }
         }
     }
 
-    private static func terminalView(in view: NSView?) -> NSView? {
-        guard let view else {
+    private func resignTerminal(in window: NSWindow) {
+        guard let responder = window.firstResponder as? NSView,
+              Self.isTerminal(responder)
+        else {
+            return
+        }
+        window.makeFirstResponder(nil)
+    }
+
+    private static func visibleTerminal(in view: NSView?) -> NSView? {
+        guard let view, !view.isHidden else {
             return nil
         }
-        if String(describing: type(of: view)).contains("LocalProcessTerminalView") {
+        if isTerminal(view) {
             return view
         }
         for child in view.subviews {
-            if let found = terminalView(in: child) {
+            if let found = visibleTerminal(in: child) {
                 return found
             }
         }
         return nil
+    }
+
+    private static func isTerminal(_ view: NSView) -> Bool {
+        String(describing: type(of: view)).contains("LocalProcessTerminalView")
     }
 
     private func refreshGeometry(from window: NSWindow) {
@@ -162,7 +200,7 @@ final class WindowChrome: NSObject, ObservableObject {
             rightCap: max(0, window.frame.maxX - right.minX - Self.plusReserve),
             leftPad: Self.trafficLightWidth,
             notchWidth: max(0, right.minX - left.maxX),
-            rowHeight: max(left.height, window.contentView?.safeAreaInsets.top ?? 0, 28)
+            rowHeight: max(left.height, 28)
         )
     }
 
@@ -313,23 +351,38 @@ struct WindowChromeReader: NSViewRepresentable {
             guard let window else {
                 return
             }
-            let names: [Notification.Name] = [
-                NSWindow.didResizeNotification,
-                NSWindow.didChangeScreenNotification,
-            ]
-            for name in names {
-                center.addObserver(self, selector: #selector(handleChange), name: name, object: window)
-            }
             center.addObserver(
                 self,
-                selector: #selector(handleChange),
+                selector: #selector(handleScreen),
+                name: NSWindow.didChangeScreenNotification,
+                object: window
+            )
+            center.addObserver(
+                self,
+                selector: #selector(handleScreen),
                 name: NSApplication.didChangeScreenParametersNotification,
                 object: nil
             )
+            center.addObserver(
+                self,
+                selector: #selector(handleKey),
+                name: NSWindow.didBecomeKeyNotification,
+                object: window
+            )
+            center.addObserver(
+                self,
+                selector: #selector(handleKey),
+                name: NSWindow.didResignKeyNotification,
+                object: window
+            )
         }
 
-        @objc private func handleChange(_ notification: Notification) {
-            chrome?.handleBoundsChange(of: window)
+        @objc private func handleScreen(_ notification: Notification) {
+            chrome?.handleScreenChange(of: window)
+        }
+
+        @objc private func handleKey(_ notification: Notification) {
+            chrome?.handleKeyChange(of: window)
         }
     }
 }
