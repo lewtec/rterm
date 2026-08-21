@@ -59,6 +59,18 @@ final class DriverTests: XCTestCase {
         XCTAssertEqual(launch.arguments[5], "ada@riverwood")
     }
 
+    func testVerboseLogURLIsUniquePerGeneration() {
+        let id = UUID()
+        XCTAssertNotEqual(
+            Driver.verboseLogURL(placeID: id, generation: 0),
+            Driver.verboseLogURL(placeID: id, generation: 1)
+        )
+        XCTAssertTrue(
+            Driver.verboseLogURL(placeID: id, generation: 2).lastPathComponent
+                .contains("-2.log")
+        )
+    }
+
     func testRemoteVerboseLogUsesDashE() {
         let place = Place(user: "ada", host: "whiterun", backend: .herdr)
         let path = "/tmp/rterm-ssh.log"

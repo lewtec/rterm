@@ -140,8 +140,27 @@ final class AppStore: ObservableObject {
         persist()
     }
 
-    func handleExit(_ id: UUID, code: Int32?) {
-        mutateAttach(id) { $0.handleExit(code) }
+    func handleExit(_ id: UUID, code: Int32?, generation: Int? = nil) {
+        mutateAttach(id) { $0.handleExit(code, generation: generation) }
+    }
+
+    func noteConnectTimeout(_ id: UUID, generation: Int? = nil) {
+        guard let attach = attaches[id] else {
+            return
+        }
+        if let generation, attach.generation != generation {
+            return
+        }
+        guard attach.isConnecting else {
+            return
+        }
+        if attach.connectAttempt >= PlaceAttach.maxConnectAttempts {
+            mutateAttach(id) { $0.failConnectTimeout() }
+            return
+        }
+        let next = attach.connectAttempt + 1
+        reconnect(id)
+        mutateAttach(id) { $0.setConnectAttempt(next) }
     }
 
     func noteTTY(_ id: UUID) {

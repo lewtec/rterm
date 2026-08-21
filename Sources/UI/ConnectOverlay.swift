@@ -42,7 +42,6 @@ final class ConnectProgress: ObservableObject {
 
 struct ConnectOverlay: View {
     @ObservedObject var progress: ConnectProgress
-    var headline: String
 
     var body: some View {
         ZStack {
@@ -51,7 +50,7 @@ struct ConnectOverlay: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
-                Text(headline)
+                Text(progress.headline)
                     .font(.headline)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)

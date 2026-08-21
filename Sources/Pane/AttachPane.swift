@@ -4,11 +4,12 @@ import SwiftUI
 
 struct AttachPane: View {
     var place: Place
+    var generation: Int
     var active: Bool
-    var headline: String
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
     var onProgress: (String) -> Void
+    var onTimeout: () -> Void
 
     @StateObject private var progress = ConnectProgress()
 
@@ -16,14 +17,16 @@ struct AttachPane: View {
         ZStack {
             AttachTerminal(
                 place: place,
+                generation: generation,
                 active: active,
                 progress: progress,
                 onExit: onExit,
                 onTTY: onTTY,
-                onProgress: onProgress
+                onProgress: onProgress,
+                onTimeout: onTimeout
             )
             if active, progress.isVisible {
-                ConnectOverlay(progress: progress, headline: headline)
+                ConnectOverlay(progress: progress)
             }
         }
     }
@@ -31,24 +34,28 @@ struct AttachPane: View {
 
 private struct AttachTerminal: NSViewRepresentable {
     var place: Place
+    var generation: Int
     var active: Bool
     var progress: ConnectProgress
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
     var onProgress: (String) -> Void
+    var onTimeout: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onExit: onExit, progress: progress, onProgress: onProgress)
+        Coordinator(onExit: onExit, progress: progress, onProgress: onProgress, onTimeout: onTimeout)
     }
 
     func makeNSView(context: Context) -> FillTerminalView {
         let view = FillTerminalView(frame: .zero)
         view.processDelegate = context.coordinator
-        let logURL = place.isLocal ? nil : Self.makeVerboseLogURL(for: place)
+        let logURL = place.isLocal ? nil : Driver.verboseLogURL(placeID: place.id, generation: generation)
         context.coordinator.logURL = logURL
         context.coordinator.onProgress = onProgress
+        context.coordinator.onTimeout = onTimeout
         progress.onHeadline = onProgress
-        if let logURL {
+        context.coordinator.startConnectWatchdog()
+        if logURL != nil {
             context.coordinator.startWatch()
         }
         let launch = Driver.launch(for: place, verboseLog: logURL?.path)
@@ -56,6 +63,7 @@ private struct AttachTerminal: NSViewRepresentable {
         let onTTY = onTTY
         view.onTTYOutput = {
             onTTY()
+            context.coordinator.cancelConnectWatchdog()
             Task { @MainActor in
                 progress.finish()
             }
@@ -73,14 +81,10 @@ private struct AttachTerminal: NSViewRepresentable {
         return view
     }
 
-    private static func makeVerboseLogURL(for place: Place) -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("rterm-ssh-\(place.id.uuidString).log")
-    }
-
     func updateNSView(_ nsView: FillTerminalView, context: Context) {
         context.coordinator.onExit = onExit
         context.coordinator.onProgress = onProgress
+        context.coordinator.onTimeout = onTimeout
         let progress = progress
         Task { @MainActor in
             progress.onHeadline = onProgress
@@ -103,20 +107,37 @@ private struct AttachTerminal: NSViewRepresentable {
         var onExit: (Int32?) -> Void
         let progress: ConnectProgress
         var logURL: URL?
+        var onTimeout: () -> Void
         private var timer: Timer?
         private var handle: FileHandle?
         private var leftover = Data()
+        private var watchdog: Watchdog?
 
         var onProgress: (String) -> Void
 
         init(
             onExit: @escaping (Int32?) -> Void,
             progress: ConnectProgress,
-            onProgress: @escaping (String) -> Void
+            onProgress: @escaping (String) -> Void,
+            onTimeout: @escaping () -> Void
         ) {
             self.onExit = onExit
             self.progress = progress
             self.onProgress = onProgress
+            self.onTimeout = onTimeout
+        }
+
+        func startConnectWatchdog() {
+            let dog = Watchdog(interval: PlaceAttach.connectTimeoutSeconds) { [weak self] in
+                self?.onTimeout()
+            }
+            watchdog = dog
+            dog.pet()
+        }
+
+        func cancelConnectWatchdog() {
+            watchdog?.cancel()
+            watchdog = nil
         }
 
         func startWatch() {
@@ -137,6 +158,7 @@ private struct AttachTerminal: NSViewRepresentable {
         }
 
         func stopWatch() {
+            cancelConnectWatchdog()
             timer?.invalidate()
             timer = nil
             try? handle?.close()
@@ -165,6 +187,7 @@ private struct AttachTerminal: NSViewRepresentable {
                 let lineData = leftover.subdata(in: leftover.startIndex..<range.lowerBound)
                 leftover.removeSubrange(leftover.startIndex..<range.upperBound)
                 if let line = String(data: lineData, encoding: .utf8) {
+                    watchdog?.pet()
                     let progress = progress
                     Task { @MainActor in
                         progress.ingest(line)

@@ -106,6 +106,8 @@ ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 user@host -- exec "$SHE
 
 A dead path must make `ssh` exit. ServerAlive options do that. The tab dot is grey when idle, green when the process is alive, and red when attach failed. Do not show a latency color. Local places have no ServerAlive options.
 
+If a connecting headline (`Connecting…` or `Connecting to …`) is idle for 5 seconds with no new SSH trace, run Reconnect. Trace output resets that idle timer. After 3 idle attempts, fail with `connection timed out`. Later headlines (Connected, Authenticating, Offering key) are not this hang.
+
 Driver commands:
 
 | backend | command |

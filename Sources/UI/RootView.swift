@@ -192,17 +192,22 @@ struct RootView: View {
                         let generation = store.attaches[place.id]?.generation ?? 0
                         AttachPane(
                             place: place,
+                            generation: generation,
                             active: active,
-                            headline: store.attaches[place.id]?.connectHeadline
-                                ?? PlaceAttach.connectingTitle,
                             onExit: { code in
-                                store.handleExit(place.id, code: code)
+                                store.handleExit(place.id, code: code, generation: generation)
                             },
                             onTTY: {
                                 store.noteTTY(place.id)
                             },
                             onProgress: { headline in
                                 store.noteProgress(place.id, headline)
+                            },
+                            onTimeout: {
+                                store.noteConnectTimeout(
+                                    place.id,
+                                    generation: generation
+                                )
                             }
                         )
                         .id("\(place.id.uuidString)-\(generation)")

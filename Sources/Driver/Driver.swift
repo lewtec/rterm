@@ -13,6 +13,11 @@ enum Driver {
         var currentDirectory: String?
     }
 
+    static func verboseLogURL(placeID: UUID, generation: Int) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("rterm-ssh-\(placeID.uuidString)-\(generation).log")
+    }
+
     static func launch(for place: Place, verboseLog: String? = nil) -> Launch {
         if place.isLocal {
             return Launch(

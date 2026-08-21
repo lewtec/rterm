@@ -8,7 +8,9 @@ final class PlaceAttachTests: XCTestCase {
         XCTAssertEqual(attach.phase, .attaching(PlaceAttach.connectingTitle))
         XCTAssertEqual(attach.connectHeadline, PlaceAttach.connectingTitle)
         XCTAssertTrue(attach.showsPane)
+        XCTAssertTrue(attach.isConnecting)
         XCTAssertEqual(attach.generation, 0)
+        XCTAssertEqual(attach.connectAttempt, 1)
     }
 
     func testTTYPromotesAttachingToLive() {
@@ -101,5 +103,99 @@ final class PlaceAttachTests: XCTestCase {
         attach.sleep()
         XCTAssertEqual(attach.phase, .idle)
         XCTAssertEqual(attach.generation, 1)
+    }
+
+    func testConnectingHeadline() {
+        XCTAssertTrue(PlaceAttach.isConnectingHeadline(PlaceAttach.connectingTitle))
+        XCTAssertTrue(PlaceAttach.isConnectingHeadline("Connecting to whiterun"))
+        XCTAssertFalse(PlaceAttach.isConnectingHeadline("Connected"))
+        XCTAssertFalse(PlaceAttach.isConnectingHeadline("Authenticating to whiterun"))
+        XCTAssertFalse(PlaceAttach.isConnectingHeadline("Offering key"))
+    }
+
+    func testConnectTimeoutRetriesThenGivesUp() {
+        var attach = PlaceAttach()
+        attach.select()
+        XCTAssertEqual(attach.connectAttempt, 1)
+
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.phase, .attaching(PlaceAttach.connectingTitle))
+        XCTAssertEqual(attach.connectAttempt, 2)
+        XCTAssertEqual(attach.generation, 1)
+
+        attach.noteProgress("Connecting to whiterun")
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.phase, .attaching(PlaceAttach.connectingTitle))
+        XCTAssertEqual(attach.connectAttempt, 3)
+        XCTAssertEqual(attach.generation, 2)
+
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.phase, .failed(PlaceAttach.timedOutMessage))
+        XCTAssertEqual(attach.generation, 2)
+        XCTAssertFalse(attach.showsPane)
+        XCTAssertFalse(attach.isConnecting)
+
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.phase, .failed(PlaceAttach.timedOutMessage))
+        attach.handleExit(255)
+        XCTAssertEqual(attach.phase, .failed(PlaceAttach.timedOutMessage))
+    }
+
+    func testProgressDoesNotRegressToConnectingTitle() {
+        var attach = PlaceAttach()
+        attach.select()
+        attach.noteProgress("Connecting to whiterun")
+        attach.noteProgress(PlaceAttach.connectingTitle)
+        XCTAssertEqual(attach.phase, .attaching("Connecting to whiterun"))
+    }
+
+    func testConnectTimeoutIgnoredAfterConnecting() {
+        var attach = PlaceAttach()
+        attach.select()
+        attach.noteProgress("Connected")
+        XCTAssertFalse(attach.isConnecting)
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.phase, .attaching("Connected"))
+        XCTAssertEqual(attach.generation, 0)
+        XCTAssertEqual(attach.connectAttempt, 1)
+
+        attach.noteProgress("Offering key")
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.phase, .attaching("Offering key"))
+    }
+
+    func testStaleExitDoesNotClobberRetry() {
+        var attach = PlaceAttach()
+        attach.select()
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.generation, 1)
+        attach.handleExit(255, generation: 0)
+        XCTAssertEqual(attach.phase, .attaching(PlaceAttach.connectingTitle))
+        attach.handleExit(255, generation: 1)
+        XCTAssertEqual(attach.phase, .failed("exited (255)"))
+    }
+
+    func testRefreshRemountsWithoutResettingAttempts() {
+        var attach = PlaceAttach()
+        attach.select()
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.connectAttempt, 2)
+        XCTAssertEqual(attach.generation, 1)
+        attach.refresh()
+        XCTAssertEqual(attach.generation, 2)
+        XCTAssertEqual(attach.connectAttempt, 2)
+        XCTAssertEqual(attach.phase, .attaching(PlaceAttach.connectingTitle))
+    }
+
+    func testReconnectResetsConnectAttempts() {
+        var attach = PlaceAttach()
+        attach.select()
+        attach.noteConnectTimeout()
+        attach.noteConnectTimeout()
+        attach.noteConnectTimeout()
+        XCTAssertEqual(attach.phase, .failed(PlaceAttach.timedOutMessage))
+        attach.reconnect()
+        XCTAssertEqual(attach.connectAttempt, 1)
+        XCTAssertTrue(attach.isConnecting)
     }
 }
