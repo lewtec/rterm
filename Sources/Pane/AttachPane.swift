@@ -63,14 +63,10 @@ private struct AttachTerminal: NSViewRepresentable {
         }
         let launch = Driver.launch(for: place, verboseLog: logURL?.path)
         view.place = place
-        let progress = progress
         let onTTY = onTTY
         view.onTTYOutput = {
             onTTY()
-            context.coordinator.cancelConnectWatchdog()
-            Task { @MainActor in
-                progress.finish()
-            }
+            context.coordinator.stopWatch()
         }
         view.startProcess(
             executable: launch.executable,
@@ -104,6 +100,9 @@ private struct AttachTerminal: NSViewRepresentable {
                 nsView.window?.makeFirstResponder(nil)
             }
             nsView.isHidden = !active
+            if active {
+                nsView.refreshAfterReveal()
+            }
         }
     }
 
@@ -308,7 +307,27 @@ final class FillTerminalView: LocalProcessTerminalView {
             removeKeyMonitor()
         } else {
             installKeyMonitor()
+            enableMetalIfNeeded()
         }
+    }
+
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        if isHidden {
+            return
+        }
+        super.setNeedsDisplay(invalidRect)
+    }
+
+    func refreshAfterReveal() {
+        terminal.updateFullScreen()
+        feed(byteArray: [])
+    }
+
+    private func enableMetalIfNeeded() {
+        guard !isUsingMetalRenderer else {
+            return
+        }
+        try? setUseMetal(true)
     }
 
     private func installKeyMonitor() {

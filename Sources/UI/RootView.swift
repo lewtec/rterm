@@ -217,10 +217,9 @@ struct RootView: View {
                             }
                         )
                         .id("\(place.id.uuidString)-\(generation)")
-                        .frame(
-                            width: active ? geo.size.width : 0,
-                            height: active ? geo.size.height : 0
-                        )
+                        // Full size while hidden. A 0×0 frame resizes the PTY
+                        // and forces herdr/tmux to redraw on every tab switch.
+                        .frame(width: geo.size.width, height: geo.size.height)
                         .opacity(active ? 1 : 0)
                         .allowsHitTesting(active)
                     }
