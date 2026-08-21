@@ -315,10 +315,17 @@ private struct PlaceTab: View {
             statusMark
             Text(place.displayLabel)
                 .lineLimit(1)
+                .opacity(state == .attaching ? 0.35 : 1)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
         .background(selected ? Color.accentColor.opacity(0.22) : Color.clear, in: Capsule())
+        .overlay {
+            if state == .attaching {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
         .overlay(
             Capsule().strokeBorder(selected ? Color.accentColor.opacity(0.5) : Color.clear)
         )
@@ -336,9 +343,7 @@ private struct PlaceTab: View {
     private var statusMark: some View {
         switch state {
         case .attaching:
-            ProgressView()
-                .controlSize(.mini)
-                .scaleEffect(0.55)
+            Color.clear
                 .frame(width: 7, height: 7)
         default:
             Circle()

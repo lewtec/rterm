@@ -46,7 +46,6 @@ struct ConnectOverlay: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
-                    .scaleEffect(1.5)
                     .frame(width: 36, height: 36)
                 Text(headline)
                     .multilineTextAlignment(.center)
