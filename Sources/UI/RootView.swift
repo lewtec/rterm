@@ -125,15 +125,16 @@ struct RootView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
                 ForEach(places) { place in
-                    PlaceTab(
-                        place: place,
-                        state: store.attaches[place.id]?.tabState ?? .idle,
-                        headline: store.attaches[place.id]?.connectHeadline,
-                        selected: store.selectedID == place.id
-                    )
-                    .onTapGesture {
+                    Button {
                         store.select(place.id)
+                    } label: {
+                        PlaceTab(
+                            place: place,
+                            state: store.tabState(for: place.id),
+                            selected: store.selectedID == place.id
+                        )
                     }
+                    .buttonStyle(.plain)
                     .contextMenu {
                         Button("Reconnect") {
                             store.reconnect(place.id)
@@ -187,27 +188,21 @@ struct RootView: View {
             GeometryReader { geo in
             ZStack {
                 ForEach(store.places) { place in
-                    if store.attaches[place.id]?.showsPane == true {
+                    if store.attaches[place.id]?.showsPane == true,
+                       let progress = store.connectProgress(for: place.id)
+                    {
                         let active = store.selectedID == place.id
                         let generation = store.attaches[place.id]?.generation ?? 0
                         AttachPane(
                             place: place,
                             generation: generation,
                             active: active,
+                            progress: progress,
                             onExit: { code in
                                 store.handleExit(place.id, code: code, generation: generation)
                             },
                             onTTY: {
                                 store.noteTTY(place.id)
-                            },
-                            onProgress: { headline in
-                                store.noteProgress(place.id, headline)
-                            },
-                            onCrumb: { line in
-                                store.noteCrumb(place.id, line)
-                            },
-                            onReveal: {
-                                store.hideConnectOverlay(place.id)
                             },
                             onTimeout: {
                                 store.noteConnectTimeout(
@@ -238,14 +233,7 @@ struct RootView: View {
                             message: message,
                             onRetry: { store.reconnect(place.id) }
                         )
-                    case .attaching(let headline):
-                        if store.attaches[place.id]?.showsConnectOverlay == true {
-                            ConnectOverlay(
-                                headline: headline,
-                                crumbs: store.attaches[place.id]?.crumbs ?? []
-                            )
-                        }
-                    case .live:
+                    case .attaching, .live:
                         EmptyView()
                     }
 
@@ -306,7 +294,6 @@ private struct TrafficDot: View {
 private struct PlaceTab: View {
     let place: Place
     let state: TabState
-    let headline: String?
     let selected: Bool
 
     var body: some View {
@@ -321,7 +308,7 @@ private struct PlaceTab: View {
         .overlay(
             Capsule().strokeBorder(selected ? Color.accentColor.opacity(0.5) : Color.clear)
         )
-        .help(headline ?? place.displayLabel)
+        .help(place.displayLabel)
     }
 
     static func estimatedWidth(for place: Place) -> CGFloat {

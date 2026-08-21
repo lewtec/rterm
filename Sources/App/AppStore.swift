@@ -11,6 +11,7 @@ final class AppStore: ObservableObject {
     @Published var debugOverlay = false
     @Published var catalogError: String?
 
+    private var connectProgressByID: [UUID: ConnectProgress] = [:]
     private let catalogIO: CatalogIO
 
     init(catalogIO: CatalogIO = CatalogIO()) {
@@ -28,7 +29,11 @@ final class AppStore: ObservableObject {
 
     func select(_ id: UUID) {
         selectedID = id
+        let wasIdle = attaches[id]?.phase == .idle || attaches[id] == nil
         mutateAttach(id) { $0.select() }
+        if wasIdle {
+            ensureProgress(id).begin(clearCrumbs: true)
+        }
     }
 
     func selectPlace(at index: Int) {
@@ -38,6 +43,7 @@ final class AppStore: ObservableObject {
 
     func reconnect(_ id: UUID) {
         mutateAttach(id) { $0.reconnect() }
+        ensureProgress(id).begin(clearCrumbs: false)
         debugOverlay = false
     }
 
@@ -50,6 +56,7 @@ final class AppStore: ObservableObject {
         debugOverlay = false
         for id in places.map(\.id) {
             mutateAttach(id) { $0.sleep() }
+            connectProgressByID[id]?.reset()
         }
     }
 
@@ -114,6 +121,7 @@ final class AppStore: ObservableObject {
             shouldReattach = false
             places.append(place)
             attaches[place.id] = PlaceAttach()
+            _ = ensureProgress(place.id)
         }
         editor = nil
         persist()
@@ -127,6 +135,7 @@ final class AppStore: ObservableObject {
     func delete(_ id: UUID) {
         places.removeAll { $0.id == id }
         attaches[id] = nil
+        connectProgressByID[id] = nil
         if selectedID == id {
             if let next = places.first?.id {
                 select(next)
@@ -142,6 +151,17 @@ final class AppStore: ObservableObject {
 
     func handleExit(_ id: UUID, code: Int32?, generation: Int? = nil) {
         mutateAttach(id) { $0.handleExit(code, generation: generation) }
+        if attaches[id]?.showsPane != true {
+            connectProgressByID[id]?.finish()
+        }
+    }
+
+    func connectProgress(for id: UUID) -> ConnectProgress? {
+        connectProgressByID[id]
+    }
+
+    func tabState(for id: UUID) -> TabState {
+        attaches[id]?.tabState ?? .idle
     }
 
     func noteConnectTimeout(_ id: UUID, generation: Int? = nil) {
@@ -169,14 +189,6 @@ final class AppStore: ObservableObject {
 
     func noteProgress(_ id: UUID, _ headline: String) {
         mutateAttach(id) { $0.noteProgress(headline) }
-    }
-
-    func noteCrumb(_ id: UUID, _ line: String) {
-        mutateAttach(id) { $0.noteCrumb(line) }
-    }
-
-    func hideConnectOverlay(_ id: UUID) {
-        mutateAttach(id) { $0.hideConnectOverlay() }
     }
 
     func revealCatalog() {
@@ -228,8 +240,12 @@ final class AppStore: ObservableObject {
     private func applyPlaces(_ incoming: [Place], selectFirst: Bool) {
         let incomingIDs = Set(incoming.map(\.id))
         attaches = attaches.filter { incomingIDs.contains($0.key) }
+        connectProgressByID = connectProgressByID.filter { incomingIDs.contains($0.key) }
         for place in incoming where attaches[place.id] == nil {
             attaches[place.id] = PlaceAttach()
+        }
+        for place in incoming {
+            _ = ensureProgress(place.id)
         }
         places = incoming
         if selectFirst || selectedID.map(incomingIDs.contains) != true {
@@ -249,9 +265,26 @@ final class AppStore: ObservableObject {
         }
     }
 
+    @discardableResult
+    private func ensureProgress(_ id: UUID) -> ConnectProgress {
+        if let existing = connectProgressByID[id] {
+            return existing
+        }
+        let progress = ConnectProgress()
+        progress.onHeadline = { [weak self] text in
+            self?.noteProgress(id, text)
+        }
+        connectProgressByID[id] = progress
+        return progress
+    }
+
     private func mutateAttach(_ id: UUID, _ body: (inout PlaceAttach) -> Void) {
         var attach = attaches[id] ?? PlaceAttach()
+        let before = attach
         body(&attach)
+        guard attach != before else {
+            return
+        }
         attaches[id] = attach
     }
 

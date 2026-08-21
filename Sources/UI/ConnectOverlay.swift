@@ -2,14 +2,20 @@ import SwiftUI
 
 @MainActor
 final class ConnectProgress: ObservableObject {
-    @Published private(set) var isVisible = false
-    var onHeadline: ((String) -> Void)?
-    var onCrumb: ((String) -> Void)?
-    var onReveal: (() -> Void)?
+    static let maxCrumbs = 5
 
-    func beginRemote() {
+    @Published private(set) var isVisible = false
+    @Published private(set) var headline = PlaceAttach.connectingTitle
+    @Published private(set) var crumbs: [String] = []
+    var onHeadline: ((String) -> Void)?
+
+    func begin(clearCrumbs: Bool) {
+        if clearCrumbs {
+            crumbs = []
+        }
+        headline = PlaceAttach.connectingTitle
         isVisible = true
-        onHeadline?(PlaceAttach.connectingTitle)
+        onHeadline?(headline)
     }
 
     func ingest(_ raw: String) {
@@ -17,20 +23,32 @@ final class ConnectProgress: ObservableObject {
             return
         }
         if let crumb = SSHConnectTrace.crumb(for: raw) {
-            onCrumb?(crumb)
+            crumbs.append(crumb)
+            if crumbs.count > Self.maxCrumbs {
+                crumbs.removeFirst(crumbs.count - Self.maxCrumbs)
+            }
         }
         switch SSHConnectTrace.event(for: raw) {
         case .progress(let text):
+            guard headline != text else {
+                return
+            }
+            headline = text
             onHeadline?(text)
         case .revealTerminal:
             isVisible = false
-            onReveal?()
         case .none:
             break
         }
     }
 
     func finish() {
+        isVisible = false
+    }
+
+    func reset() {
+        crumbs = []
+        headline = PlaceAttach.connectingTitle
         isVisible = false
     }
 }

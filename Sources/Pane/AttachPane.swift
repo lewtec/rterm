@@ -6,28 +6,27 @@ struct AttachPane: View {
     var place: Place
     var generation: Int
     var active: Bool
+    @ObservedObject var progress: ConnectProgress
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
-    var onProgress: (String) -> Void
-    var onCrumb: (String) -> Void
-    var onReveal: () -> Void
     var onTimeout: () -> Void
 
-    @StateObject private var progress = ConnectProgress()
-
     var body: some View {
-        AttachTerminal(
-            place: place,
-            generation: generation,
-            active: active,
-            progress: progress,
-            onExit: onExit,
-            onTTY: onTTY,
-            onProgress: onProgress,
-            onCrumb: onCrumb,
-            onReveal: onReveal,
-            onTimeout: onTimeout
-        )
+        ZStack {
+            AttachTerminal(
+                place: place,
+                generation: generation,
+                active: active,
+                progress: progress,
+                onExit: onExit,
+                onTTY: onTTY,
+                onTimeout: onTimeout
+            )
+            if progress.isVisible {
+                ConnectOverlay(headline: progress.headline, crumbs: progress.crumbs)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 
@@ -38,13 +37,10 @@ private struct AttachTerminal: NSViewRepresentable {
     var progress: ConnectProgress
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
-    var onProgress: (String) -> Void
-    var onCrumb: (String) -> Void
-    var onReveal: () -> Void
     var onTimeout: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onExit: onExit, progress: progress, onProgress: onProgress, onTimeout: onTimeout)
+        Coordinator(onExit: onExit, progress: progress, onTimeout: onTimeout)
     }
 
     func makeNSView(context: Context) -> FillTerminalView {
@@ -52,11 +48,7 @@ private struct AttachTerminal: NSViewRepresentable {
         view.processDelegate = context.coordinator
         let logURL = place.isLocal ? nil : Driver.verboseLogURL(placeID: place.id, generation: generation)
         context.coordinator.logURL = logURL
-        context.coordinator.onProgress = onProgress
         context.coordinator.onTimeout = onTimeout
-        progress.onHeadline = onProgress
-        progress.onCrumb = onCrumb
-        progress.onReveal = onReveal
         context.coordinator.startConnectWatchdog()
         if logURL != nil {
             context.coordinator.startWatch()
@@ -83,16 +75,7 @@ private struct AttachTerminal: NSViewRepresentable {
 
     func updateNSView(_ nsView: FillTerminalView, context: Context) {
         context.coordinator.onExit = onExit
-        context.coordinator.onProgress = onProgress
         context.coordinator.onTimeout = onTimeout
-        let progress = progress
-        let onCrumb = onCrumb
-        let onReveal = onReveal
-        Task { @MainActor in
-            progress.onHeadline = onProgress
-            progress.onCrumb = onCrumb
-            progress.onReveal = onReveal
-        }
         nsView.processDelegate = context.coordinator
         nsView.place = place
         if nsView.isHidden == active {
@@ -122,17 +105,13 @@ private struct AttachTerminal: NSViewRepresentable {
         private var leftover = Data()
         private var watchdog: Watchdog?
 
-        var onProgress: (String) -> Void
-
         init(
             onExit: @escaping (Int32?) -> Void,
             progress: ConnectProgress,
-            onProgress: @escaping (String) -> Void,
             onTimeout: @escaping () -> Void
         ) {
             self.onExit = onExit
             self.progress = progress
-            self.onProgress = onProgress
             self.onTimeout = onTimeout
         }
 
@@ -155,10 +134,6 @@ private struct AttachTerminal: NSViewRepresentable {
             }
             FileManager.default.createFile(atPath: logURL.path, contents: nil)
             handle = try? FileHandle(forReadingFrom: logURL)
-            let progress = progress
-            Task { @MainActor in
-                progress.beginRemote()
-            }
             let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
                 self?.pump()
             }
