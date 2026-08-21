@@ -287,7 +287,11 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
-        super.dataReceived(slice: slice)
+        if isHidden {
+            terminal.feed(buffer: slice)
+        } else {
+            super.dataReceived(slice: slice)
+        }
         guard !announcedTTY, !slice.isEmpty else {
             return
         }
@@ -296,8 +300,11 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     func refreshAfterReveal() {
+        let hadMetal = isUsingMetalRenderer
         enableMetalIfNeeded()
-        terminal.updateFullScreen()
+        if isUsingMetalRenderer, !hadMetal {
+            terminal.updateFullScreen()
+        }
         feed(byteArray: [])
     }
 
