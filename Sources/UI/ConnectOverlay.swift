@@ -1,12 +1,14 @@
 import SwiftUI
 
 @MainActor
-final class ConnectProgress: ObservableObject {
+@Observable
+final class ConnectProgress {
     static let maxCrumbs = 5
 
-    @Published private(set) var isVisible = false
-    @Published private(set) var headline = PlaceAttach.connectingTitle
-    @Published private(set) var crumbs: [String] = []
+    private(set) var isVisible = false
+    private(set) var headline = PlaceAttach.connectingTitle
+    private(set) var crumbs: [String] = []
+    @ObservationIgnored
     var onHeadline: ((String) -> Void)?
 
     func begin(clearCrumbs: Bool) {

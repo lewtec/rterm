@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlaceEditorSheet: View {
-    @EnvironmentObject private var store: AppStore
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

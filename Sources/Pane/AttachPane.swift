@@ -6,7 +6,7 @@ struct AttachPane: View {
     var place: Place
     var generation: Int
     var active: Bool
-    @ObservedObject var progress: ConnectProgress
+    var progress: ConnectProgress
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
     var onTimeout: () -> Void

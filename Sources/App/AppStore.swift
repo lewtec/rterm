@@ -3,15 +3,18 @@ import Foundation
 import SwiftUI
 
 @MainActor
-final class AppStore: ObservableObject {
-    @Published var places: [Place] = []
-    @Published var selectedID: UUID?
-    @Published var attaches: [UUID: PlaceAttach] = [:]
-    @Published var editor: PlaceEditorState?
-    @Published var debugOverlay = false
-    @Published var catalogError: String?
+@Observable
+final class AppStore {
+    var places: [Place] = []
+    var selectedID: UUID?
+    var attaches: [UUID: PlaceAttach] = [:]
+    var editor: PlaceEditorState?
+    var debugOverlay = false
+    var catalogError: String?
 
+    @ObservationIgnored
     private var connectProgressByID: [UUID: ConnectProgress] = [:]
+    @ObservationIgnored
     private let catalogIO: CatalogIO
 
     init(catalogIO: CatalogIO = CatalogIO()) {

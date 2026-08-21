@@ -2,16 +2,16 @@ import AppKit
 import SwiftUI
 
 struct RootView: View {
-    @EnvironmentObject private var store: AppStore
+    @Environment(AppStore.self) private var store
     @EnvironmentObject private var chrome: WindowChrome
 
     var body: some View {
         VStack(spacing: 0) {
-            chromeRow
+            CatalogChrome()
             if let catalogError = store.catalogError {
                 catalogBanner(catalogError)
             }
-            paneArea
+            PaneStack()
         }
         .background(Color(nsColor: .textBackgroundColor))
         .background(WindowChromeReader(chrome: chrome))
@@ -19,7 +19,6 @@ struct RootView: View {
         .toolbar(.hidden)
         .sheet(isPresented: editorPresented) {
             PlaceEditorSheet()
-                .environmentObject(store)
         }
         .onChange(of: store.selectedID) { _, _ in
             chrome.focusTerminalIfKey()
@@ -56,8 +55,13 @@ struct RootView: View {
         .background(Color.orange.opacity(0.25))
     }
 
-    @ViewBuilder
-    private var chromeRow: some View {
+}
+
+private struct CatalogChrome: View {
+    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var chrome: WindowChrome
+
+    var body: some View {
         if chrome.splitActive {
             notchRow
         } else {
@@ -179,9 +183,12 @@ struct RootView: View {
         .buttonStyle(.plain)
         .help("Add Place")
     }
+}
 
-    @ViewBuilder
-    private var paneArea: some View {
+private struct PaneStack: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
         if store.places.isEmpty {
             emptyCatalog
         } else {

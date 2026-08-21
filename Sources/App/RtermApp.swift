@@ -2,13 +2,13 @@ import SwiftUI
 
 @main
 struct RtermApp: App {
-    @StateObject private var store = AppStore()
+    @State private var store = AppStore()
     @StateObject private var chrome = WindowChrome()
 
     var body: some Scene {
         Window("rterm", id: "main") {
             RootView()
-                .environmentObject(store)
+                .environment(store)
                 .environmentObject(chrome)
                 .frame(minWidth: 720, minHeight: 420)
         }
