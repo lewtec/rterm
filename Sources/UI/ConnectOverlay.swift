@@ -2,16 +2,14 @@ import SwiftUI
 
 @MainActor
 final class ConnectProgress: ObservableObject {
-    @Published private(set) var headline = "Connecting…"
-    @Published private(set) var crumbs: [String] = []
     @Published private(set) var isVisible = false
     var onHeadline: ((String) -> Void)?
+    var onCrumb: ((String) -> Void)?
+    var onReveal: (() -> Void)?
 
     func beginRemote() {
-        headline = PlaceAttach.connectingTitle
-        crumbs = []
         isVisible = true
-        onHeadline?(headline)
+        onHeadline?(PlaceAttach.connectingTitle)
     }
 
     func ingest(_ raw: String) {
@@ -19,17 +17,14 @@ final class ConnectProgress: ObservableObject {
             return
         }
         if let crumb = SSHConnectTrace.crumb(for: raw) {
-            crumbs.append(crumb)
-            if crumbs.count > 5 {
-                crumbs.removeFirst(crumbs.count - 5)
-            }
+            onCrumb?(crumb)
         }
         switch SSHConnectTrace.event(for: raw) {
         case .progress(let text):
-            headline = text
             onHeadline?(text)
         case .revealTerminal:
             isVisible = false
+            onReveal?()
         case .none:
             break
         }
@@ -41,21 +36,23 @@ final class ConnectProgress: ObservableObject {
 }
 
 struct ConnectOverlay: View {
-    @ObservedObject var progress: ConnectProgress
+    var headline: String
+    var crumbs: [String]
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.55)
-            VStack(spacing: 14) {
+            Color.black.opacity(0.45)
+            VStack(spacing: 12) {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
-                Text(progress.headline)
-                    .font(.headline)
-                    .foregroundStyle(.white)
+                    .scaleEffect(1.5)
+                    .frame(width: 36, height: 36)
+                Text(headline)
                     .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(progress.crumbs.enumerated()), id: \.offset) { _, line in
+                    ForEach(Array(crumbs.enumerated()), id: \.offset) { _, line in
                         Text(line)
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.72))
@@ -65,8 +62,10 @@ struct ConnectOverlay: View {
                 }
                 .frame(maxWidth: 520, alignment: .leading)
             }
-            .padding(28)
+            .padding(24)
         }
         .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(headline)
     }
 }

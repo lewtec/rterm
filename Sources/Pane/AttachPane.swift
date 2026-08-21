@@ -9,26 +9,25 @@ struct AttachPane: View {
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
     var onProgress: (String) -> Void
+    var onCrumb: (String) -> Void
+    var onReveal: () -> Void
     var onTimeout: () -> Void
 
     @StateObject private var progress = ConnectProgress()
 
     var body: some View {
-        ZStack {
-            AttachTerminal(
-                place: place,
-                generation: generation,
-                active: active,
-                progress: progress,
-                onExit: onExit,
-                onTTY: onTTY,
-                onProgress: onProgress,
-                onTimeout: onTimeout
-            )
-            if active, progress.isVisible {
-                ConnectOverlay(progress: progress)
-            }
-        }
+        AttachTerminal(
+            place: place,
+            generation: generation,
+            active: active,
+            progress: progress,
+            onExit: onExit,
+            onTTY: onTTY,
+            onProgress: onProgress,
+            onCrumb: onCrumb,
+            onReveal: onReveal,
+            onTimeout: onTimeout
+        )
     }
 }
 
@@ -40,6 +39,8 @@ private struct AttachTerminal: NSViewRepresentable {
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
     var onProgress: (String) -> Void
+    var onCrumb: (String) -> Void
+    var onReveal: () -> Void
     var onTimeout: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -54,6 +55,8 @@ private struct AttachTerminal: NSViewRepresentable {
         context.coordinator.onProgress = onProgress
         context.coordinator.onTimeout = onTimeout
         progress.onHeadline = onProgress
+        progress.onCrumb = onCrumb
+        progress.onReveal = onReveal
         context.coordinator.startConnectWatchdog()
         if logURL != nil {
             context.coordinator.startWatch()
@@ -86,8 +89,12 @@ private struct AttachTerminal: NSViewRepresentable {
         context.coordinator.onProgress = onProgress
         context.coordinator.onTimeout = onTimeout
         let progress = progress
+        let onCrumb = onCrumb
+        let onReveal = onReveal
         Task { @MainActor in
             progress.onHeadline = onProgress
+            progress.onCrumb = onCrumb
+            progress.onReveal = onReveal
         }
         nsView.processDelegate = context.coordinator
         if nsView.isHidden == active {

@@ -187,6 +187,30 @@ final class PlaceAttachTests: XCTestCase {
         XCTAssertEqual(attach.phase, .attaching(PlaceAttach.connectingTitle))
     }
 
+    func testCrumbsSurviveReconnectAndClearOnFreshSelect() {
+        var attach = PlaceAttach()
+        attach.select()
+        attach.noteCrumb("Connecting to whiterun")
+        attach.noteCrumb("Connection established.")
+        XCTAssertEqual(attach.crumbs.count, 2)
+        XCTAssertTrue(attach.showsConnectOverlay)
+
+        attach.reconnect()
+        XCTAssertEqual(attach.crumbs, ["Connecting to whiterun", "Connection established."])
+        XCTAssertTrue(attach.showsConnectOverlay)
+
+        attach.hideConnectOverlay()
+        XCTAssertFalse(attach.showsConnectOverlay)
+        attach.reconnect()
+        XCTAssertTrue(attach.showsConnectOverlay)
+        XCTAssertEqual(attach.crumbs.count, 2)
+
+        attach.sleep()
+        attach.select()
+        XCTAssertEqual(attach.crumbs, [])
+        XCTAssertTrue(attach.showsConnectOverlay)
+    }
+
     func testReconnectResetsConnectAttempts() {
         var attach = PlaceAttach()
         attach.select()

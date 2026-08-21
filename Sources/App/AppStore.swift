@@ -171,6 +171,14 @@ final class AppStore: ObservableObject {
         mutateAttach(id) { $0.noteProgress(headline) }
     }
 
+    func noteCrumb(_ id: UUID, _ line: String) {
+        mutateAttach(id) { $0.noteCrumb(line) }
+    }
+
+    func hideConnectOverlay(_ id: UUID) {
+        mutateAttach(id) { $0.hideConnectOverlay() }
+    }
+
     func revealCatalog() {
         do {
             try catalogIO.prepareDirectory()

@@ -203,6 +203,12 @@ struct RootView: View {
                             onProgress: { headline in
                                 store.noteProgress(place.id, headline)
                             },
+                            onCrumb: { line in
+                                store.noteCrumb(place.id, line)
+                            },
+                            onReveal: {
+                                store.hideConnectOverlay(place.id)
+                            },
                             onTimeout: {
                                 store.noteConnectTimeout(
                                     place.id,
@@ -233,7 +239,14 @@ struct RootView: View {
                             message: message,
                             onRetry: { store.reconnect(place.id) }
                         )
-                    case .attaching, .live:
+                    case .attaching(let headline):
+                        if store.attaches[place.id]?.showsConnectOverlay == true {
+                            ConnectOverlay(
+                                headline: headline,
+                                crumbs: store.attaches[place.id]?.crumbs ?? []
+                            )
+                        }
+                    case .live:
                         EmptyView()
                     }
 

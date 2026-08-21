@@ -14,10 +14,13 @@ struct PlaceAttach: Equatable {
     static let connectTimeoutSeconds: TimeInterval = 5
     static let maxConnectAttempts = 3
     static let timedOutMessage = "connection timed out"
+    static let maxCrumbs = 5
 
     private(set) var phase: Phase = .idle
     private(set) var generation: Int = 0
     private(set) var connectAttempt: Int = 0
+    private(set) var crumbs: [String] = []
+    private(set) var hidesConnectOverlay = false
 
     var showsPane: Bool {
         switch phase {
@@ -55,6 +58,13 @@ struct PlaceAttach: Equatable {
         return Self.isConnectingHeadline(title)
     }
 
+    var showsConnectOverlay: Bool {
+        if case .attaching = phase {
+            return !hidesConnectOverlay
+        }
+        return false
+    }
+
     static func isConnectingHeadline(_ title: String) -> Bool {
         title == connectingTitle || title.hasPrefix("Connecting to ")
     }
@@ -84,6 +94,17 @@ struct PlaceAttach: Equatable {
         phase = .attaching(headline)
     }
 
+    mutating func noteCrumb(_ line: String) {
+        crumbs.append(line)
+        if crumbs.count > Self.maxCrumbs {
+            crumbs.removeFirst(crumbs.count - Self.maxCrumbs)
+        }
+    }
+
+    mutating func hideConnectOverlay() {
+        hidesConnectOverlay = true
+    }
+
     mutating func noteTTY() {
         if case .attaching = phase {
             phase = .live
@@ -92,6 +113,8 @@ struct PlaceAttach: Equatable {
 
     mutating func sleep() {
         phase = .idle
+        crumbs = []
+        hidesConnectOverlay = false
     }
 
     mutating func failConnectTimeout() {
@@ -138,7 +161,10 @@ struct PlaceAttach: Equatable {
     private mutating func beginConnect(bumpGeneration: Bool) {
         if bumpGeneration {
             refresh()
+        } else {
+            crumbs = []
         }
+        hidesConnectOverlay = false
         connectAttempt = 1
         phase = .attaching(Self.connectingTitle)
     }
