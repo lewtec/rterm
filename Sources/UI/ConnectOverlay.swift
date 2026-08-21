@@ -44,8 +44,9 @@ struct ConnectOverlay: View {
             Color.black.opacity(0.45)
             VStack(spacing: 12) {
                 ProgressView()
-                    .controlSize(.large)
+                    .controlSize(.regular)
                     .tint(.white)
+                    .scaleEffect(36.0 / 16.0)
                     .frame(width: 36, height: 36)
                 Text(headline)
                     .multilineTextAlignment(.center)
