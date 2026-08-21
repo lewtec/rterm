@@ -336,10 +336,7 @@ private struct PlaceTab: View {
     private var statusMark: some View {
         switch state {
         case .attaching:
-            ProgressView()
-                .controlSize(.mini)
-                .scaleEffect(0.55)
-                .frame(width: 7, height: 7)
+            ActivitySpinner(size: 7, color: .secondary)
         default:
             Circle()
                 .fill(dotColor)

@@ -40,31 +40,25 @@ struct ConnectOverlay: View {
     var crumbs: [String]
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.45)
-            VStack(spacing: 12) {
-                ProgressView()
-                    .controlSize(.regular)
-                    .tint(.white)
-                    .scaleEffect(36.0 / 16.0)
-                    .frame(width: 36, height: 36)
-                Text(headline)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(crumbs.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.72))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
+        VStack(spacing: 12) {
+            ActivitySpinner(size: 36, color: .white)
+            Text(headline)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(crumbs.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                .frame(maxWidth: 520, alignment: .leading)
             }
-            .padding(24)
+            .frame(maxWidth: 520, alignment: .leading)
         }
-        .allowsHitTesting(false)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.45))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(headline)
     }

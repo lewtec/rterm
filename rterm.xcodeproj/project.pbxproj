@@ -22,6 +22,7 @@
 		47EBBF51C6F8597193B1FD89 /* SSHConnectTraceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD81C22ABE50E5253868F49A /* SSHConnectTraceTests.swift */; };
 		4DF6D14C0276B63682AF32E5 /* TabState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 934A08F963745061B6816150 /* TabState.swift */; };
 		55D505910E4B25A0651B2F49 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE03EF4B8DC774F5795F778D /* RootView.swift */; };
+		5DCB11BAEA20D4FAA1479602 /* ActivitySpinner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5A7199D8145F2802FE91F5 /* ActivitySpinner.swift */; };
 		5F9E1CFBB755E7A2A788B988 /* NotchTabPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */; };
 		616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */; };
 		8584BD7BB2BB7D26CF66FAC2 /* PlaceAttach.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF5E743D73142180BDA5114 /* PlaceAttach.swift */; };
@@ -65,6 +66,7 @@
 		72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceEditorSheet.swift; sourceTree = "<group>"; };
 		75902058234193BBD87886FC /* CatalogDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDocument.swift; sourceTree = "<group>"; };
 		7AE4CF7FFC713D5C2A066427 /* PlaceAttachTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceAttachTests.swift; sourceTree = "<group>"; };
+		7B5A7199D8145F2802FE91F5 /* ActivitySpinner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySpinner.swift; sourceTree = "<group>"; };
 		7F4691BEA6EC153186C7DDB2 /* Driver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Driver.swift; sourceTree = "<group>"; };
 		844DA7142EB561906510A8DF /* AttachExitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExitTests.swift; sourceTree = "<group>"; };
 		85FA90FD4A5EC7C6BA781244 /* CatalogCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCodec.swift; sourceTree = "<group>"; };
@@ -162,6 +164,7 @@
 		B393F6F639FEA2932EF47D21 /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				7B5A7199D8145F2802FE91F5 /* ActivitySpinner.swift */,
 				AC2C804E50828522F719F5F5 /* ConnectOverlay.swift */,
 				13FB0B0803CF923FEA81135A /* FailureOverlay.swift */,
 				293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */,
@@ -304,6 +307,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5DCB11BAEA20D4FAA1479602 /* ActivitySpinner.swift in Sources */,
 				8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */,
 				1DB417114EC95E1E350884F0 /* AttachExit.swift in Sources */,
 				15339B4A873B4E8367A79B1B /* AttachPane.swift in Sources */,
