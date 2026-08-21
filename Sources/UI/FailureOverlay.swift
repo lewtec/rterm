@@ -7,6 +7,7 @@ struct FailureOverlay: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.45)
+                .ignoresSafeArea(edges: [])
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 36))

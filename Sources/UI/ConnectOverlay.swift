@@ -76,7 +76,7 @@ struct ConnectOverlay: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.45))
+        .background(Color.black.opacity(0.45), ignoresSafeAreaEdges: [])
         .accessibilityElement(children: .combine)
         .accessibilityLabel(headline)
     }

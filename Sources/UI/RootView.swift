@@ -246,8 +246,10 @@ struct RootView: View {
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
         }
     }
 
