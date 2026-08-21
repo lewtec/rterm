@@ -21,6 +21,7 @@
 		46A0E729A9E10FC645027BBC /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */; };
 		47EBBF51C6F8597193B1FD89 /* SSHConnectTraceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD81C22ABE50E5253868F49A /* SSHConnectTraceTests.swift */; };
 		4DF6D14C0276B63682AF32E5 /* TabState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 934A08F963745061B6816150 /* TabState.swift */; };
+		51BE3B39188616C6F6E6A885 /* UUIDV7.swift in Sources */ = {isa = PBXBuildFile; fileRef = 499434C43A3DB49ABBF13449 /* UUIDV7.swift */; };
 		55D505910E4B25A0651B2F49 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE03EF4B8DC774F5795F778D /* RootView.swift */; };
 		5DCB11BAEA20D4FAA1479602 /* ActivitySpinner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5A7199D8145F2802FE91F5 /* ActivitySpinner.swift */; };
 		5F9E1CFBB755E7A2A788B988 /* NotchTabPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */; };
@@ -61,6 +62,7 @@
 		2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExit.swift; sourceTree = "<group>"; };
 		302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
 		30F910EB261883D838E755E7 /* ImagePasteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePasteTests.swift; sourceTree = "<group>"; };
+		499434C43A3DB49ABBF13449 /* UUIDV7.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UUIDV7.swift; sourceTree = "<group>"; };
 		58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = rtermTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D131B6C8C9BE149C0616626 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5EBA1844573C8A441417C35C /* WatchdogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogTests.swift; sourceTree = "<group>"; };
@@ -170,6 +172,7 @@
 			isa = PBXGroup;
 			children = (
 				7D52B11EC205DC9DFECDFEC2 /* ImagePaste.swift */,
+				499434C43A3DB49ABBF13449 /* UUIDV7.swift */,
 			);
 			path = Paste;
 			sourceTree = "<group>";
@@ -342,6 +345,7 @@
 				B59A5FC09D0E9E5289576DB7 /* RtermApp.swift in Sources */,
 				0315994EFFACF2070234E7E4 /* SSHConnectTrace.swift in Sources */,
 				4DF6D14C0276B63682AF32E5 /* TabState.swift in Sources */,
+				51BE3B39188616C6F6E6A885 /* UUIDV7.swift in Sources */,
 				B71E17B5E9050736D0C096E3 /* Watchdog.swift in Sources */,
 				46A0E729A9E10FC645027BBC /* WindowChrome.swift in Sources */,
 			);

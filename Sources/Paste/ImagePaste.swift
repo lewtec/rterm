@@ -60,7 +60,7 @@ enum ImagePaste {
     static func deliver(
         png: Data,
         place: Place,
-        pasteID: UUID = UUID(),
+        pasteID: UUID = UUIDV7.generate(),
         fileManager: FileManager = .default,
         upload: (Data, [String]) throws -> Void = ImagePaste.sshCat
     ) -> Result<String, ImagePasteError> {
