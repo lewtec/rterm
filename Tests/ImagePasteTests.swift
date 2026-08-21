@@ -36,8 +36,24 @@ final class ImagePasteTests: XCTestCase {
     }
 
     func testHostPathUsesPasteID() {
-        let id = UUID()
+        let id = UUIDV7.generate()
         XCTAssertEqual(ImagePaste.hostPath(id: id), "/tmp/rterm-paste-\(id.uuidString).png")
+    }
+
+    func testDefaultPasteIDIsVersion7() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let id = UUIDV7.generate(now: now)
+        XCTAssertEqual(UUIDV7.version(of: id), 7)
+        XCTAssertEqual(id.uuid.8 >> 6, 0b10)
+        XCTAssertEqual(
+            UInt64(id.uuid.0) << 40
+                | UInt64(id.uuid.1) << 32
+                | UInt64(id.uuid.2) << 24
+                | UInt64(id.uuid.3) << 16
+                | UInt64(id.uuid.4) << 8
+                | UInt64(id.uuid.5),
+            1_700_000_000_000
+        )
     }
 
     func testLocalDeliverWritesPNG() throws {

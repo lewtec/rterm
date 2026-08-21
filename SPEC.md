@@ -146,7 +146,7 @@ Use the clipboard only when it has image data and no text. A copy that has both 
 | Ctrl+V, image only | send Ctrl+V to the process | same upload and path as ⌘V |
 | any gesture, text present | paste text | paste text |
 
-Each paste uses a new `<id>`. Cap the PNG at 10 MiB. A larger image or a failed write beeps. Do not paste a truncated file.
+Each paste uses a new UUIDv7 `<id>`. Cap the PNG at 10 MiB. A larger image or a failed write beeps. Do not paste a truncated file.
 
 Remote upload uses a second `/usr/bin/ssh` on the attach ControlPath:
 
