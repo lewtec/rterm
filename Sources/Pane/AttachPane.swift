@@ -84,7 +84,7 @@ private struct AttachTerminal: NSViewRepresentable {
             }
             nsView.isHidden = !active
             if active {
-                nsView.resumeAfterReveal()
+                nsView.refreshAfterReveal()
             }
         }
     }
@@ -287,19 +287,16 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
-        if !announcedTTY, !slice.isEmpty {
-            announcedTTY = true
-            onTTYOutput?()
-        }
-        guard !isHidden else {
+        super.dataReceived(slice: slice)
+        guard !announcedTTY, !slice.isEmpty else {
             return
         }
-        super.dataReceived(slice: slice)
+        announcedTTY = true
+        onTTYOutput?()
     }
 
-    func resumeAfterReveal() {
+    func refreshAfterReveal() {
         enableMetalIfNeeded()
-        sizeChanged(source: self, newCols: terminal.cols, newRows: terminal.rows)
         terminal.updateFullScreen()
         feed(byteArray: [])
     }
