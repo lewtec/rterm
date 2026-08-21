@@ -304,6 +304,11 @@ final class FillTerminalView: LocalProcessTerminalView {
         enableMetalIfNeeded()
         if isUsingMetalRenderer, !hadMetal {
             terminal.updateFullScreen()
+            feed(byteArray: [])
+            return
+        }
+        guard terminal.getUpdateRange() != nil else {
+            return
         }
         feed(byteArray: [])
     }
@@ -339,6 +344,9 @@ final class FillTerminalView: LocalProcessTerminalView {
 
     override func setFrameSize(_ newSize: NSSize) {
         hideReservedScroller()
+        guard newSize != frame.size else {
+            return
+        }
         super.setFrameSize(newSize)
     }
 
