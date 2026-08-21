@@ -11,6 +11,7 @@ final class DriverTests: XCTestCase {
                 "-t",
                 "-o", "ServerAliveInterval=5",
                 "-o", "ServerAliveCountMax=2",
+            ] + Driver.controlMasterOptions(for: place) + [
                 "ada@whiterun",
                 "exec \"$SHELL\" -lc 'tmux new-session -A -s '\\''foo'\\'''",
             ]
@@ -56,7 +57,8 @@ final class DriverTests: XCTestCase {
         XCTAssertTrue(Driver.remoteCommand(for: place).contains("exec herdr"))
         XCTAssertFalse(Driver.remoteCommand(for: place).contains("--remote"))
         XCTAssertEqual(launch.arguments.prefix(5), ["-t", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2"])
-        XCTAssertEqual(launch.arguments[5], "ada@riverwood")
+        XCTAssertEqual(Array(launch.arguments.dropLast().suffix(1)), ["ada@riverwood"])
+        XCTAssertEqual(Driver.controlMasterOptions(for: place).prefix(2), ["-o", "ControlMaster=auto"])
     }
 
     func testVerboseLogURLIsUniquePerGeneration() {
@@ -97,6 +99,28 @@ final class DriverTests: XCTestCase {
         XCTAssertTrue(Place(user: "ada", host: "::1", backend: .herdr).isLocal)
         XCTAssertTrue(Place(user: "ada", host: "[::1]", backend: .herdr).isLocal)
         XCTAssertFalse(Place(user: "ada", host: "riverwood", backend: .herdr).isLocal)
+    }
+
+    func testControlPathIsPerPlace() {
+        let first = Place(id: UUID(), user: "ada", host: "whiterun", backend: .herdr)
+        let second = Place(id: UUID(), user: "ada", host: "whiterun", backend: .herdr)
+        XCTAssertNotEqual(Driver.controlPath(for: first), Driver.controlPath(for: second))
+        XCTAssertTrue(Driver.controlPath(for: first).contains(first.id.uuidString))
+        XCTAssertTrue(Driver.controlPath(for: first).contains("/rterm/cm-"))
+    }
+
+    func testUploadUsesControlPathWithoutTTY() {
+        let place = Place(user: "ada", host: "whiterun", backend: .herdr)
+        let remote = "/tmp/rterm-paste-x.png"
+        XCTAssertEqual(
+            Driver.uploadArguments(for: place, remotePath: remote),
+            [
+                "-o", "BatchMode=yes",
+                "-o", "ControlPath=\(Driver.controlPath(for: place))",
+                "ada@whiterun",
+                "cat > '/tmp/rterm-paste-x.png'",
+            ]
+        )
     }
 
     func testEmptyHostTmuxLabel() {

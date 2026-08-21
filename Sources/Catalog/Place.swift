@@ -1,6 +1,6 @@
 import Foundation
 
-struct Place: Identifiable, Hashable {
+struct Place: Identifiable, Hashable, Sendable {
     var id: UUID
     var user: String
     var host: String

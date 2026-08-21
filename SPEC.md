@@ -99,12 +99,14 @@ If host is set and backend is `tmux` or `screen`, transport is SSH. Use `/usr/bi
 Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so the remote `PATH` is the user's login `PATH`:
 
 ```text
-ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 user@host -- exec "$SHELL" -lc '<driver-command>'
+ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=auto -o ControlPath=<caches>/cm-<place-id> -o ControlPersist=no user@host -- exec "$SHELL" -lc '<driver-command>'
 ```
 
 `$SHELL` is the user's shell (local or remote as SSH resolves it). Do not hard-code bash or zsh.
 
-A dead path must make `ssh` exit. ServerAlive options do that. The tab dot is grey when idle, green when the process is alive, and red when attach failed. Do not show a latency color. Local places have no ServerAlive options.
+`<caches>` is `~/Library/Caches/rterm`. One ControlPath per place id. The attach `ssh` is the master. Sleep still kills that process. `ControlPersist=no` removes the socket with it.
+
+A dead path must make `ssh` exit. ServerAlive options do that. The tab dot is grey when idle, green when the process is alive, and red when attach failed. Do not show a latency color. Local places have no ServerAlive options and no ControlMaster.
 
 If a connecting headline (`Connecting…` or `Connecting to …`) is idle for 5 seconds with no new SSH trace, run Reconnect. Trace output resets that idle timer. After 3 idle attempts, fail with `connection timed out`. Later headlines (Connected, Authenticating, Offering key) are not this hang.
 
@@ -131,6 +133,30 @@ SSH prompts (password, host key, OTP) stay as bytes in the pane. Do not wrap `SS
 ssh-agent, keys, and Touch ID stay outside rterm.
 
 rterm classifies some failures: host unreachable, mux binary missing, or a non-zero exit that is not a clean detach. On those failures, keep the last pane frame. Draw an overlay on it: centered icon and the error text. Click or Reconnect runs attach again.
+
+## Image paste
+
+Image paste writes a PNG the destination can open. It does not draw the image in the pane.
+
+Use the clipboard only when it has image data and no text. A copy that has both is text.
+
+| Gesture | Local place | Remote place |
+| --- | --- | --- |
+| ⌘V, image only | write `/tmp/rterm-paste-<id>.png` on this Mac and paste that path | upload the same path on the host, then paste it |
+| Ctrl+V, image only | send Ctrl+V to the process | same upload and path as ⌘V |
+| any gesture, text present | paste text | paste text |
+
+Each paste uses a new `<id>`. Cap the PNG at 10 MiB. A larger image or a failed write beeps. Do not paste a truncated file.
+
+Remote upload uses a second `/usr/bin/ssh` on the attach ControlPath:
+
+```text
+ssh -o BatchMode=yes -o ControlPath=<caches>/cm-<place-id> user@host -- cat > '/tmp/rterm-paste-<id>.png'
+```
+
+Do not open a TTY. Do not install a remote helper. Do not write into the place working directory. Leave the file in `/tmp`.
+
+Do not implement OSC 5522 or inline graphics for this.
 
 ## Catalog
 
@@ -167,5 +193,7 @@ Inline images (sixel, Kitty, iTerm) are not a requirement.
 - Flattening herdr or tmux UI into native Mac chrome
 - Creating remote users or installing mux binaries
 - mosh or Eternal Terminal
+- Drag and drop of image files
+- OSC 5522 clipboard protocol
 - App display name beyond the repo name `rterm`
 - Pricing and store listing

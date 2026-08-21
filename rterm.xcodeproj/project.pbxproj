@@ -39,6 +39,8 @@
 		D69C2A0CD7B282AE61DCED26 /* NotchTabPackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */; };
 		D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */; };
 		DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */; };
+		E88E23005C60D24EF3FCB347 /* ImagePasteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30F910EB261883D838E755E7 /* ImagePasteTests.swift */; };
+		FA4B0340D94C093B3EC1ED55 /* ImagePaste.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D52B11EC205DC9DFECDFEC2 /* ImagePaste.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +60,7 @@
 		293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchTabPack.swift; sourceTree = "<group>"; };
 		2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExit.swift; sourceTree = "<group>"; };
 		302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
+		30F910EB261883D838E755E7 /* ImagePasteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePasteTests.swift; sourceTree = "<group>"; };
 		58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = rtermTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D131B6C8C9BE149C0616626 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5EBA1844573C8A441417C35C /* WatchdogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogTests.swift; sourceTree = "<group>"; };
@@ -67,6 +70,7 @@
 		75902058234193BBD87886FC /* CatalogDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDocument.swift; sourceTree = "<group>"; };
 		7AE4CF7FFC713D5C2A066427 /* PlaceAttachTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceAttachTests.swift; sourceTree = "<group>"; };
 		7B5A7199D8145F2802FE91F5 /* ActivitySpinner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySpinner.swift; sourceTree = "<group>"; };
+		7D52B11EC205DC9DFECDFEC2 /* ImagePaste.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePaste.swift; sourceTree = "<group>"; };
 		7F4691BEA6EC153186C7DDB2 /* Driver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Driver.swift; sourceTree = "<group>"; };
 		844DA7142EB561906510A8DF /* AttachExitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachExitTests.swift; sourceTree = "<group>"; };
 		85FA90FD4A5EC7C6BA781244 /* CatalogCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCodec.swift; sourceTree = "<group>"; };
@@ -147,6 +151,7 @@
 				4FE1900A9D9B6A70887D31EF /* Catalog */,
 				EF130C33E3E960ADD8F0A5B5 /* Driver */,
 				3FEDE17E80AD02A24CE4F36A /* Pane */,
+				AE5C165652A5925D08B7F089 /* Paste */,
 				B393F6F639FEA2932EF47D21 /* UI */,
 			);
 			path = Sources;
@@ -159,6 +164,14 @@
 				58CA0BE4C11C9A59FD9EDCBE /* rtermTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AE5C165652A5925D08B7F089 /* Paste */ = {
+			isa = PBXGroup;
+			children = (
+				7D52B11EC205DC9DFECDFEC2 /* ImagePaste.swift */,
+			);
+			path = Paste;
 			sourceTree = "<group>";
 		};
 		B393F6F639FEA2932EF47D21 /* UI */ = {
@@ -194,6 +207,7 @@
 				844DA7142EB561906510A8DF /* AttachExitTests.swift */,
 				C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */,
 				1EBB72640D125653205D9483 /* DriverTests.swift */,
+				30F910EB261883D838E755E7 /* ImagePasteTests.swift */,
 				C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */,
 				7AE4CF7FFC713D5C2A066427 /* PlaceAttachTests.swift */,
 				DD81C22ABE50E5253868F49A /* SSHConnectTraceTests.swift */,
@@ -319,6 +333,7 @@
 				9842710B9E569D008EC9F630 /* ConnectOverlay.swift in Sources */,
 				2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */,
 				3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */,
+				FA4B0340D94C093B3EC1ED55 /* ImagePaste.swift in Sources */,
 				5F9E1CFBB755E7A2A788B988 /* NotchTabPack.swift in Sources */,
 				26C887D05A6FEA60AFC5085A /* Place.swift in Sources */,
 				8584BD7BB2BB7D26CF66FAC2 /* PlaceAttach.swift in Sources */,
@@ -340,6 +355,7 @@
 				2E0F2E61B6CB66A439A9C75A /* AttachExitTests.swift in Sources */,
 				DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */,
 				1860C8A1ED7272D4E5718DB9 /* DriverTests.swift in Sources */,
+				E88E23005C60D24EF3FCB347 /* ImagePasteTests.swift in Sources */,
 				D69C2A0CD7B282AE61DCED26 /* NotchTabPackTests.swift in Sources */,
 				A467407BAF610B5DD5623D9D /* PlaceAttachTests.swift in Sources */,
 				47EBBF51C6F8597193B1FD89 /* SSHConnectTraceTests.swift in Sources */,
