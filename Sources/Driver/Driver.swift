@@ -26,10 +26,41 @@ enum Driver {
                 currentDirectory: NSHomeDirectory()
             )
         }
+        prepareControlSocketDirectory()
         return Launch(
             executable: sshExecutable,
             arguments: sshArguments(for: place, verboseLog: verboseLog),
             currentDirectory: nil
+        )
+    }
+
+    static func controlPath(for place: Place) -> String {
+        CatalogPaths.cachesDirectory
+            .appendingPathComponent("cm-\(place.id.uuidString)")
+            .path
+    }
+
+    static func controlMasterOptions(for place: Place) -> [String] {
+        [
+            "-o", "ControlMaster=auto",
+            "-o", "ControlPath=\(controlPath(for: place))",
+            "-o", "ControlPersist=no",
+        ]
+    }
+
+    static func uploadArguments(for place: Place, remotePath: String) -> [String] {
+        [
+            "-o", "BatchMode=yes",
+            "-o", "ControlPath=\(controlPath(for: place))",
+            sshTarget(for: place),
+            "cat > \(shellSingleQuote(remotePath))",
+        ]
+    }
+
+    static func prepareControlSocketDirectory() {
+        try? FileManager.default.createDirectory(
+            at: CatalogPaths.cachesDirectory,
+            withIntermediateDirectories: true
         )
     }
 
@@ -90,6 +121,9 @@ enum Driver {
         arguments += [
             "-o", "ServerAliveInterval=\(serverAliveInterval)",
             "-o", "ServerAliveCountMax=\(serverAliveCountMax)",
+        ]
+        arguments += controlMasterOptions(for: place)
+        arguments += [
             target,
             wrapped,
         ]

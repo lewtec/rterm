@@ -1,4 +1,4 @@
-enum Backend: String, CaseIterable, Identifiable, Hashable {
+enum Backend: String, CaseIterable, Identifiable, Hashable, Sendable {
     case herdr
     case tmux
     case screen

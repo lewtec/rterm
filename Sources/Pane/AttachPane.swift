@@ -62,6 +62,7 @@ private struct AttachTerminal: NSViewRepresentable {
             context.coordinator.startWatch()
         }
         let launch = Driver.launch(for: place, verboseLog: logURL?.path)
+        view.place = place
         let progress = progress
         let onTTY = onTTY
         view.onTTYOutput = {
@@ -97,6 +98,7 @@ private struct AttachTerminal: NSViewRepresentable {
             progress.onReveal = onReveal
         }
         nsView.processDelegate = context.coordinator
+        nsView.place = place
         if nsView.isHidden == active {
             if !active, nsView.window?.firstResponder === nsView {
                 nsView.window?.makeFirstResponder(nil)
@@ -107,6 +109,7 @@ private struct AttachTerminal: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: FillTerminalView, coordinator: Coordinator) {
         coordinator.stopWatch()
+        nsView.cancelImagePaste()
         nsView.terminate()
     }
 
@@ -220,7 +223,74 @@ private struct AttachTerminal: NSViewRepresentable {
 /// strip. Hide that gutter so the cell grid can use the full view.
 final class FillTerminalView: LocalProcessTerminalView {
     var onTTYOutput: (() -> Void)?
+    var place = Place(user: "", host: "", backend: .herdr)
     private var announcedTTY = false
+    private var pasteGeneration = 0
+    private var keyMonitor: Any?
+
+    override func paste(_ sender: Any) {
+        if startImagePaste(gesture: .commandV) {
+            return
+        }
+        super.paste(sender)
+    }
+
+    func cancelImagePaste() {
+        pasteGeneration += 1
+        removeKeyMonitor()
+    }
+
+    @discardableResult
+    private func startImagePaste(gesture: ImagePasteGesture) -> Bool {
+        let snap = ImagePaste.snapshot(.general)
+        guard ImagePaste.plan(
+            hasImage: snap.hasImage,
+            hasText: snap.hasText,
+            isLocal: place.isLocal,
+            gesture: gesture
+        ) == .deliver, let png = snap.png else {
+            return false
+        }
+        if png.count > ImagePaste.maxBytes {
+            NSSound.beep()
+            return true
+        }
+        pasteGeneration += 1
+        let generation = pasteGeneration
+        let place = place
+        Task { @MainActor [weak self] in
+            let result = await Task.detached {
+                ImagePaste.deliver(png: png, place: place)
+            }.value
+            self?.finishImagePaste(result, generation: generation)
+        }
+        return true
+    }
+
+    private func finishImagePaste(_ result: Result<String, ImagePasteError>, generation: Int) {
+        guard generation == pasteGeneration else {
+            return
+        }
+        switch result {
+        case .success(let path):
+            pastePath(path)
+        case .failure:
+            NSSound.beep()
+        }
+    }
+
+    private func pastePath(_ path: String) {
+        if terminal.bracketedPasteMode {
+            send(data: Self.bracketedPasteStart[...])
+            send(txt: path)
+            send(data: Self.bracketedPasteEnd[...])
+        } else {
+            send(txt: path)
+        }
+    }
+
+    private static let bracketedPasteStart: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e]
+    private static let bracketedPasteEnd: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e]
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
@@ -234,6 +304,33 @@ final class FillTerminalView: LocalProcessTerminalView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         hideReservedScroller()
+        if window == nil {
+            removeKeyMonitor()
+        } else {
+            installKeyMonitor()
+        }
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else {
+            return
+        }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.window?.firstResponder === self else {
+                return event
+            }
+            if ImagePaste.isControlV(event), self.startImagePaste(gesture: .controlV) {
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
     }
 
     override func setFrameSize(_ newSize: NSSize) {

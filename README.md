@@ -33,6 +33,10 @@ Tab dots: grey idle, green alive, red failed. SSH keepalives make a dead path ex
 | ⌘0 | Select place 10 |
 | ⌘N | Add place |
 | ⌘R | Reconnect the selected place |
+| ⌘V | Paste text, or an image-only clipboard as a PNG path |
+| Ctrl+V | On a remote place, same image upload as ⌘V. On a local place, the process reads the Mac clipboard. |
+
+An image-only paste writes `/tmp/rterm-paste-<id>.png` on the destination and types that path. Remote upload uses the live SSH connection. Files larger than 10 MiB beep and do not paste.
 
 One window only. Splits belong to herdr or tmux on the destination.
 
