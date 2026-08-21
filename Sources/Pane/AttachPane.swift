@@ -84,7 +84,7 @@ private struct AttachTerminal: NSViewRepresentable {
             }
             nsView.isHidden = !active
             if active {
-                nsView.refreshAfterReveal()
+                nsView.resumeAfterReveal()
             }
         }
     }
@@ -266,15 +266,6 @@ final class FillTerminalView: LocalProcessTerminalView {
     private static let bracketedPasteStart: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e]
     private static let bracketedPasteEnd: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e]
 
-    override func dataReceived(slice: ArraySlice<UInt8>) {
-        super.dataReceived(slice: slice)
-        guard !announcedTTY, !slice.isEmpty else {
-            return
-        }
-        announcedTTY = true
-        onTTYOutput?()
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         hideReservedScroller()
@@ -282,7 +273,9 @@ final class FillTerminalView: LocalProcessTerminalView {
             removeKeyMonitor()
         } else {
             installKeyMonitor()
-            enableMetalIfNeeded()
+            if !isHidden {
+                enableMetalIfNeeded()
+            }
         }
     }
 
@@ -293,7 +286,20 @@ final class FillTerminalView: LocalProcessTerminalView {
         super.setNeedsDisplay(invalidRect)
     }
 
-    func refreshAfterReveal() {
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        if !announcedTTY, !slice.isEmpty {
+            announcedTTY = true
+            onTTYOutput?()
+        }
+        guard !isHidden else {
+            return
+        }
+        super.dataReceived(slice: slice)
+    }
+
+    func resumeAfterReveal() {
+        enableMetalIfNeeded()
+        sizeChanged(source: self, newCols: terminal.cols, newRows: terminal.rows)
         terminal.updateFullScreen()
         feed(byteArray: [])
     }
