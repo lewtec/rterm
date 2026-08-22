@@ -214,13 +214,8 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var keyMonitor: Any?
     private var occlusionObserver: NSObjectProtocol?
     private var metalFrameWork: DispatchWorkItem?
-    private var metalBurstStart: UInt64 = 0
-    private var lastKeyUptime: UInt64 = 0
+    private var pendingKeyEcho = false
     private var lastPaintedCursor: (x: Int, y: Int)?
-
-    private static let hostFrameDelay: TimeInterval = 1.0 / 60.0
-    private static let hostCoalesceDelay: TimeInterval = 0.008
-    private static let keyEchoWindowNs: UInt64 = 80_000_000
 
     override func paste(_ sender: Any) {
         if startImagePaste(gesture: .commandV) {
@@ -322,7 +317,13 @@ final class FillTerminalView: LocalProcessTerminalView {
             terminal.feed(buffer: slice)
         } else if isUsingMetalRenderer {
             terminal.feed(buffer: slice)
-            scheduleThrottledMetalFrame()
+            if !terminal.synchronizedOutputActive {
+                if pendingKeyEcho {
+                    presentMetalFrame(force: true)
+                } else {
+                    enqueueMetalFrame()
+                }
+            }
         } else {
             super.dataReceived(slice: slice)
         }
@@ -354,7 +355,6 @@ final class FillTerminalView: LocalProcessTerminalView {
     func sleepMetal() {
         metalFrameWork?.cancel()
         metalFrameWork = nil
-        metalBurstStart = 0
         pauseMetalDisplay()
     }
 
@@ -363,7 +363,6 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         if terminal.synchronizedOutputActive {
-            scheduleThrottledMetalFrame()
             return
         }
         let cursor = terminal.getCursorLocation()
@@ -379,60 +378,23 @@ final class FillTerminalView: LocalProcessTerminalView {
         metalKitView.draw()
         terminal.clearUpdateRange()
         lastPaintedCursor = cursor
+        pendingKeyEcho = false
     }
 
-    private func scheduleThrottledMetalFrame() {
-        let now = DispatchTime.now().uptimeNanoseconds
-        if terminal.synchronizedOutputActive {
-            metalFrameWork?.cancel()
-            metalBurstStart = 0
-            let work = DispatchWorkItem { [weak self] in
-                self?.metalFrameWork = nil
-                self?.scheduleThrottledMetalFrame()
-            }
-            metalFrameWork = work
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + Self.hostCoalesceDelay,
-                execute: work
-            )
+    private func enqueueMetalFrame() {
+        guard metalFrameWork == nil else {
             return
         }
-        if lastKeyUptime != 0, now &- lastKeyUptime < Self.keyEchoWindowNs {
-            metalFrameWork?.cancel()
-            metalFrameWork = nil
-            metalBurstStart = 0
-            presentMetalFrame()
-            if terminal.getUpdateRange() != nil {
-                scheduleThrottledMetalFrame()
-            }
-            return
-        }
-        if metalBurstStart == 0 {
-            metalBurstStart = now
-        }
-        let coalesceNs = UInt64(Self.hostCoalesceDelay * 1_000_000_000)
-        let maxNs = UInt64(Self.hostFrameDelay * 1_000_000_000)
-        let fire = min(now &+ coalesceNs, metalBurstStart &+ maxNs)
-        let delayNs = fire > now ? fire - now : 0
-        metalFrameWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.metalFrameWork = nil
-            self.metalBurstStart = 0
             self.presentMetalFrame()
             if self.terminal.getUpdateRange() != nil {
-                self.scheduleThrottledMetalFrame()
+                self.enqueueMetalFrame()
             }
         }
         metalFrameWork = work
-        if delayNs == 0 {
-            DispatchQueue.main.async(execute: work)
-        } else {
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + .nanoseconds(Int(delayNs)),
-                execute: work
-            )
-        }
+        DispatchQueue.main.async(execute: work)
     }
 
     private var metalKitView: MTKView? {
@@ -487,7 +449,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             guard let self, self.window?.firstResponder === self else {
                 return event
             }
-            self.lastKeyUptime = DispatchTime.now().uptimeNanoseconds
+            self.pendingKeyEcho = true
             if ImagePaste.isControlV(event), self.startImagePaste(gesture: .controlV) {
                 return nil
             }
