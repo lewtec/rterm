@@ -35,6 +35,8 @@ xcodebuild \
   -destination 'generic/platform=macOS' \
   -derivedDataPath "$derived" \
   -skipPackagePluginValidation \
+  SWIFT_ENABLE_TESTABILITY=YES \
+  ENABLE_TESTABILITY=YES \
   MARKETING_VERSION="$version" \
   CURRENT_PROJECT_VERSION="$version" \
   CODE_SIGN_IDENTITY="-" \

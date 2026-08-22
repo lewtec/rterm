@@ -1,6 +1,6 @@
 import AppKit
 import MetalKit
-import SwiftTerm
+@testable import SwiftTerm
 import SwiftUI
 
 struct AttachPane: View {
@@ -205,13 +205,13 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var keyMonitor: Any?
     private var occlusionObserver: NSObjectProtocol?
     private var metalFrameWork: DispatchWorkItem?
-    private var metalIdlePump: Timer?
+    private var metalBurstStart: UInt64 = 0
     private var lastKeyUptime: UInt64 = 0
     private var lastPaintedCursor: (x: Int, y: Int)?
 
-    private static let hostFrameDelay: TimeInterval = 1.0 / 10.0
-    private static let keyEchoWindowNs: UInt64 = 200_000_000
-    private static let idleFrameInterval: TimeInterval = 0.7
+    private static let hostFrameDelay: TimeInterval = 1.0 / 60.0
+    private static let hostCoalesceDelay: TimeInterval = 0.004
+    private static let keyEchoWindowNs: UInt64 = 80_000_000
 
     override func paste(_ sender: Any) {
         if startImagePaste(gesture: .commandV) {
@@ -297,7 +297,6 @@ final class FillTerminalView: LocalProcessTerminalView {
             } else {
                 enableMetalIfNeeded()
                 pauseMetalDisplay()
-                startMetalIdlePump()
             }
         }
     }
@@ -329,7 +328,6 @@ final class FillTerminalView: LocalProcessTerminalView {
         let hadMetal = isUsingMetalRenderer
         enableMetalIfNeeded()
         pauseMetalDisplay()
-        startMetalIdlePump()
         if isUsingMetalRenderer, !hadMetal {
             terminal.updateFullScreen()
         }
@@ -347,8 +345,7 @@ final class FillTerminalView: LocalProcessTerminalView {
     func sleepMetal() {
         metalFrameWork?.cancel()
         metalFrameWork = nil
-        metalIdlePump?.invalidate()
-        metalIdlePump = nil
+        metalBurstStart = 0
         pauseMetalDisplay()
     }
 
@@ -361,6 +358,11 @@ final class FillTerminalView: LocalProcessTerminalView {
         if !force, terminal.getUpdateRange() == nil, cursorUnchanged {
             return
         }
+        if let (startY, endY) = terminal.getScrollInvariantUpdateRange(), startY <= endY {
+            metalDirtyRange = startY...endY
+        } else {
+            metalDirtyRange = nil
+        }
         metalKitView.draw()
         terminal.clearUpdateRange()
         lastPaintedCursor = cursor
@@ -371,29 +373,39 @@ final class FillTerminalView: LocalProcessTerminalView {
         if lastKeyUptime != 0, now &- lastKeyUptime < Self.keyEchoWindowNs {
             metalFrameWork?.cancel()
             metalFrameWork = nil
+            metalBurstStart = 0
             presentMetalFrame()
+            if terminal.getUpdateRange() != nil {
+                scheduleThrottledMetalFrame()
+            }
             return
         }
-        guard metalFrameWork == nil else {
-            return
+        if metalBurstStart == 0 {
+            metalBurstStart = now
         }
+        let coalesceNs = UInt64(Self.hostCoalesceDelay * 1_000_000_000)
+        let maxNs = UInt64(Self.hostFrameDelay * 1_000_000_000)
+        let fire = min(now &+ coalesceNs, metalBurstStart &+ maxNs)
+        let delayNs = fire > now ? fire - now : 0
+        metalFrameWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.metalFrameWork = nil
-            self?.presentMetalFrame()
+            guard let self else { return }
+            self.metalFrameWork = nil
+            self.metalBurstStart = 0
+            self.presentMetalFrame()
+            if self.terminal.getUpdateRange() != nil {
+                self.scheduleThrottledMetalFrame()
+            }
         }
         metalFrameWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hostFrameDelay, execute: work)
-    }
-
-    private func startMetalIdlePump() {
-        guard metalIdlePump == nil else {
-            return
+        if delayNs == 0 {
+            DispatchQueue.main.async(execute: work)
+        } else {
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + .nanoseconds(Int(delayNs)),
+                execute: work
+            )
         }
-        let timer = Timer(timeInterval: Self.idleFrameInterval, repeats: true) { [weak self] _ in
-            self?.presentMetalFrame(force: true)
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        metalIdlePump = timer
     }
 
     private var metalKitView: MTKView? {
@@ -409,7 +421,6 @@ final class FillTerminalView: LocalProcessTerminalView {
             sleepMetal()
             return
         }
-        startMetalIdlePump()
         presentMetalFrame(force: true)
     }
 

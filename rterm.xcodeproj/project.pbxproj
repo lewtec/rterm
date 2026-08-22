@@ -402,6 +402,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = br.tec.lew.rterm;
 				PRODUCT_NAME = rterm;
 				SDKROOT = macosx;
+				SWIFT_ENABLE_TESTABILITY = YES;
 			};
 			name = Release;
 		};
@@ -588,6 +589,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = br.tec.lew.rterm;
 				PRODUCT_NAME = rterm;
 				SDKROOT = macosx;
+				SWIFT_ENABLE_TESTABILITY = YES;
 			};
 			name = Debug;
 		};
