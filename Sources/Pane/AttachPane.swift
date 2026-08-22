@@ -1,4 +1,5 @@
 import AppKit
+import MetalKit
 import SwiftTerm
 import SwiftUI
 
@@ -86,6 +87,8 @@ private struct AttachTerminal: NSViewRepresentable {
             nsView.isHidden = !active
             if active {
                 nsView.refreshAfterReveal()
+            } else {
+                nsView.pauseMetalDisplay()
             }
         }
     }
@@ -263,6 +266,14 @@ final class FillTerminalView: LocalProcessTerminalView {
     private static let bracketedPasteStart: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e]
     private static let bracketedPasteEnd: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e]
 
+    override var isHidden: Bool {
+        didSet {
+            if isHidden {
+                pauseMetalDisplay()
+            }
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         hideReservedScroller()
@@ -270,7 +281,9 @@ final class FillTerminalView: LocalProcessTerminalView {
             removeKeyMonitor()
         } else {
             installKeyMonitor()
-            if !isHidden {
+            if isHidden {
+                pauseMetalDisplay()
+            } else {
                 enableMetalIfNeeded()
             }
         }
@@ -297,6 +310,7 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     func refreshAfterReveal() {
+        resumeMetalDisplay()
         let hadMetal = isUsingMetalRenderer
         enableMetalIfNeeded()
         if isUsingMetalRenderer, !hadMetal {
@@ -308,6 +322,26 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         feed(byteArray: [])
+    }
+
+    func pauseMetalDisplay() {
+        guard let metalView else {
+            return
+        }
+        metalView.enableSetNeedsDisplay = false
+        metalView.isPaused = true
+    }
+
+    private func resumeMetalDisplay() {
+        guard let metalView else {
+            return
+        }
+        metalView.isPaused = true
+        metalView.enableSetNeedsDisplay = true
+    }
+
+    private var metalView: MTKView? {
+        subviews.first { $0 is MTKView } as? MTKView
     }
 
     private func enableMetalIfNeeded() {
