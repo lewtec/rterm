@@ -219,7 +219,7 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var lastPaintedCursor: (x: Int, y: Int)?
 
     private static let hostFrameDelay: TimeInterval = 1.0 / 60.0
-    private static let hostCoalesceDelay: TimeInterval = 0.004
+    private static let hostCoalesceDelay: TimeInterval = 0.008
     private static let keyEchoWindowNs: UInt64 = 80_000_000
 
     override func paste(_ sender: Any) {
@@ -362,6 +362,10 @@ final class FillTerminalView: LocalProcessTerminalView {
         guard !isHidden, windowIsVisible, let metalKitView else {
             return
         }
+        if terminal.synchronizedOutputActive {
+            scheduleThrottledMetalFrame()
+            return
+        }
         let cursor = terminal.getCursorLocation()
         let cursorUnchanged = lastPaintedCursor.map { $0 == cursor } ?? false
         if !force, terminal.getUpdateRange() == nil, cursorUnchanged {
@@ -379,6 +383,20 @@ final class FillTerminalView: LocalProcessTerminalView {
 
     private func scheduleThrottledMetalFrame() {
         let now = DispatchTime.now().uptimeNanoseconds
+        if terminal.synchronizedOutputActive {
+            metalFrameWork?.cancel()
+            metalBurstStart = 0
+            let work = DispatchWorkItem { [weak self] in
+                self?.metalFrameWork = nil
+                self?.scheduleThrottledMetalFrame()
+            }
+            metalFrameWork = work
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.hostCoalesceDelay,
+                execute: work
+            )
+            return
+        }
         if lastKeyUptime != 0, now &- lastKeyUptime < Self.keyEchoWindowNs {
             metalFrameWork?.cancel()
             metalFrameWork = nil
