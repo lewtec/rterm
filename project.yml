@@ -39,6 +39,7 @@ targets:
         INFOPLIST_KEY_NSPrefersDisplaySafeAreaCompatibilityMode: NO
         COMBINE_HIDPI_IMAGES: YES
         ENABLE_TESTABILITY: YES
+        SWIFT_ENABLE_TESTABILITY: YES
     dependencies:
       - package: SwiftTerm
         product: SwiftTerm

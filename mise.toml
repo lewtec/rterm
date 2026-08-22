@@ -13,7 +13,7 @@ depends = ["generate"]
 
 [tasks.build]
 description = "Release-build the Mac app"
-run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Release -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation build"
+run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Release -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation SWIFT_ENABLE_TESTABILITY=YES ENABLE_TESTABILITY=YES build"
 depends = ["generate"]
 
 [tasks.debug]
@@ -34,6 +34,8 @@ dir="$(
     -configuration Release \
     -destination 'platform=macOS,arch=arm64' \
     -skipPackagePluginValidation \
+    SWIFT_ENABLE_TESTABILITY=YES \
+    ENABLE_TESTABILITY=YES \
     -showBuildSettings \
     2>/dev/null \
   | awk -F' = ' '/^    BUILT_PRODUCTS_DIR / { print $2; exit }'
