@@ -96,6 +96,8 @@ private struct AttachTerminal: NSViewRepresentable {
     static func dismantleNSView(_ nsView: FillTerminalView, coordinator: Coordinator) {
         coordinator.stopWatch()
         nsView.cancelImagePaste()
+        nsView.removeOcclusionObserver()
+        nsView.sleepMetal()
         nsView.terminate()
     }
 
@@ -201,6 +203,14 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var announcedTTY = false
     private var pasteGeneration = 0
     private var keyMonitor: Any?
+    private var occlusionObserver: NSObjectProtocol?
+    private var metalFrameWork: DispatchWorkItem?
+    private var metalIdlePump: Timer?
+    private var lastKeyUptime: UInt64 = 0
+
+    private static let hostFrameDelay: TimeInterval = 1.0 / 24.0
+    private static let keyEchoWindowNs: UInt64 = 80_000_000
+    private static let idleFrameInterval: TimeInterval = 0.7
 
     override func paste(_ sender: Any) {
         if startImagePaste(gesture: .commandV) {
@@ -268,9 +278,7 @@ final class FillTerminalView: LocalProcessTerminalView {
 
     override var isHidden: Bool {
         didSet {
-            if isHidden {
-                pauseMetalDisplay()
-            }
+            syncMetalDisplay()
         }
     }
 
@@ -279,12 +287,16 @@ final class FillTerminalView: LocalProcessTerminalView {
         hideReservedScroller()
         if window == nil {
             removeKeyMonitor()
+            removeOcclusionObserver()
         } else {
             installKeyMonitor()
-            if isHidden {
-                pauseMetalDisplay()
+            installOcclusionObserver()
+            if isHidden || !windowIsVisible {
+                sleepMetal()
             } else {
                 enableMetalIfNeeded()
+                pauseMetalDisplay()
+                startMetalIdlePump()
             }
         }
     }
@@ -297,10 +309,11 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
-        if isHidden {
+        if isHidden || !windowIsVisible {
             terminal.feed(buffer: slice)
         } else {
             super.dataReceived(slice: slice)
+            scheduleThrottledMetalFrame()
         }
         guard !announcedTTY, !slice.isEmpty else {
             return
@@ -310,18 +323,14 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     func refreshAfterReveal() {
-        resumeMetalDisplay()
         let hadMetal = isUsingMetalRenderer
         enableMetalIfNeeded()
+        pauseMetalDisplay()
+        startMetalIdlePump()
         if isUsingMetalRenderer, !hadMetal {
             terminal.updateFullScreen()
-            feed(byteArray: [])
-            return
         }
-        guard terminal.getUpdateRange() != nil else {
-            return
-        }
-        feed(byteArray: [])
+        presentMetalFrame()
     }
 
     func pauseMetalDisplay() {
@@ -332,16 +341,87 @@ final class FillTerminalView: LocalProcessTerminalView {
         metalView.isPaused = true
     }
 
-    private func resumeMetalDisplay() {
-        guard let metalView else {
+    func sleepMetal() {
+        metalFrameWork?.cancel()
+        metalFrameWork = nil
+        metalIdlePump?.invalidate()
+        metalIdlePump = nil
+        pauseMetalDisplay()
+    }
+
+    private func presentMetalFrame() {
+        guard !isHidden, windowIsVisible, let metalView else {
             return
         }
-        metalView.isPaused = true
-        metalView.enableSetNeedsDisplay = true
+        metalView.draw()
+    }
+
+    private func scheduleThrottledMetalFrame() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if lastKeyUptime != 0, now &- lastKeyUptime < Self.keyEchoWindowNs {
+            metalFrameWork?.cancel()
+            metalFrameWork = nil
+            presentMetalFrame()
+            return
+        }
+        guard metalFrameWork == nil else {
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            self?.metalFrameWork = nil
+            self?.presentMetalFrame()
+        }
+        metalFrameWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hostFrameDelay, execute: work)
+    }
+
+    private func startMetalIdlePump() {
+        guard metalIdlePump == nil else {
+            return
+        }
+        let timer = Timer(timeInterval: Self.idleFrameInterval, repeats: true) { [weak self] _ in
+            self?.presentMetalFrame()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        metalIdlePump = timer
     }
 
     private var metalView: MTKView? {
         subviews.first { $0 is MTKView } as? MTKView
+    }
+
+    private var windowIsVisible: Bool {
+        window?.occlusionState.contains(.visible) == true
+    }
+
+    private func syncMetalDisplay() {
+        if isHidden || !windowIsVisible {
+            sleepMetal()
+            return
+        }
+        startMetalIdlePump()
+        presentMetalFrame()
+    }
+
+    private func installOcclusionObserver() {
+        removeOcclusionObserver()
+        guard let window else {
+            return
+        }
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.syncMetalDisplay()
+        }
+    }
+
+    func removeOcclusionObserver() {
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+            self.occlusionObserver = nil
+        }
     }
 
     private func enableMetalIfNeeded() {
@@ -359,6 +439,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             guard let self, self.window?.firstResponder === self else {
                 return event
             }
+            self.lastKeyUptime = DispatchTime.now().uptimeNanoseconds
             if ImagePaste.isControlV(event), self.startImagePaste(gesture: .controlV) {
                 return nil
             }
