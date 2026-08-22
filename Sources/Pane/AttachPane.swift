@@ -97,6 +97,7 @@ private struct AttachTerminal: NSViewRepresentable {
         coordinator.stopWatch()
         nsView.cancelImagePaste()
         nsView.removeOcclusionObserver()
+        nsView.removeKeyWindowObservers()
         nsView.sleepMetal()
         nsView.terminate()
     }
@@ -214,6 +215,8 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var keyMonitor: Any?
     private var occlusionObserver: NSObjectProtocol?
     private var metalFrameWork: DispatchWorkItem?
+    private var cursorBlinkTimer: Timer?
+    private var keyWindowObservers: [NSObjectProtocol] = []
     private var pendingKeyEcho = false
     private var lastPaintedCursor: (x: Int, y: Int)?
 
@@ -293,14 +296,17 @@ final class FillTerminalView: LocalProcessTerminalView {
         if window == nil {
             removeKeyMonitor()
             removeOcclusionObserver()
+            removeKeyWindowObservers()
         } else {
             installKeyMonitor()
             installOcclusionObserver()
+            installKeyWindowObservers()
             if isHidden || !windowIsVisible {
                 sleepMetal()
             } else {
                 enableMetalIfNeeded()
                 pauseMetalDisplay()
+                startCursorBlink()
             }
         }
     }
@@ -342,6 +348,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             terminal.updateFullScreen()
         }
         presentMetalFrame(force: true)
+        startCursorBlink()
     }
 
     func pauseMetalDisplay() {
@@ -355,7 +362,45 @@ final class FillTerminalView: LocalProcessTerminalView {
     func sleepMetal() {
         metalFrameWork?.cancel()
         metalFrameWork = nil
+        stopCursorBlink()
         pauseMetalDisplay()
+    }
+
+    private func presentCursorFrame() {
+        guard !isHidden, windowIsVisible, window?.isKeyWindow == true, let metalKitView else {
+            return
+        }
+        if terminal.synchronizedOutputActive {
+            return
+        }
+        metalDirtyRange = nil
+        metalKitView.draw()
+    }
+
+    private var cursorShouldBlink: Bool {
+        switch terminal.options.cursorStyle {
+        case .blinkBlock, .blinkUnderline, .blinkBar:
+            return true
+        case .steadyBlock, .steadyUnderline, .steadyBar:
+            return false
+        }
+    }
+
+    private func startCursorBlink() {
+        stopCursorBlink()
+        guard cursorShouldBlink, !isHidden, windowIsVisible else {
+            return
+        }
+        let timer = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in
+            self?.presentCursorFrame()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        cursorBlinkTimer = timer
+    }
+
+    private func stopCursorBlink() {
+        cursorBlinkTimer?.invalidate()
+        cursorBlinkTimer = nil
     }
 
     private func presentMetalFrame(force: Bool = false) {
@@ -411,6 +456,34 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         presentMetalFrame(force: true)
+        startCursorBlink()
+    }
+
+    private func installKeyWindowObservers() {
+        removeKeyWindowObservers()
+        let center = NotificationCenter.default
+        let become = center.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.startCursorBlink()
+        }
+        let resign = center.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stopCursorBlink()
+        }
+        keyWindowObservers = [become, resign]
+    }
+
+    func removeKeyWindowObservers() {
+        for observer in keyWindowObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        keyWindowObservers = []
     }
 
     private func installOcclusionObserver() {
