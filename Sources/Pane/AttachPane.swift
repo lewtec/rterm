@@ -257,11 +257,26 @@ final class FillTerminalView: LocalProcessTerminalView {
         pasteGeneration += 1
         let generation = pasteGeneration
         let place = place
-        onPasteHUD?(PasteHUD.working(isLocal: place.isLocal))
+        let isLocal = place.isLocal
+        onPasteHUD?(PasteHUD.working(isLocal: isLocal, total: png.count))
         Task { @MainActor [weak self] in
+            let (stream, continuation) = AsyncStream<(Int, Int)>.makeStream()
+            let hudTask = Task { @MainActor [weak self] in
+                for await (sent, total) in stream {
+                    guard let self, self.pasteGeneration == generation else {
+                        continue
+                    }
+                    self.onPasteHUD?(PasteHUD.working(isLocal: isLocal, sent: sent, total: total))
+                }
+            }
             let result = await Task.detached {
-                ImagePaste.deliver(png: png, place: place)
+                defer { continuation.finish() }
+                return ImagePaste.deliver(png: png, place: place, onProgress: { sent, total in
+                    continuation.yield((sent, total))
+                })
             }.value
+            continuation.finish()
+            await hudTask.value
             self?.finishImagePaste(result, generation: generation)
         }
         return true

@@ -60,11 +60,21 @@ final class ImagePasteTests: XCTestCase {
         let id = UUID()
         let png = Data("png-bytes".utf8)
         let place = Place(user: "ada", host: "", backend: .herdr)
-        let result = ImagePaste.deliver(png: png, place: place, pasteID: id)
+        var progress: [(Int, Int)] = []
+        let result = ImagePaste.deliver(
+            png: png,
+            place: place,
+            pasteID: id,
+            onProgress: { sent, total in
+                progress.append((sent, total))
+            }
+        )
         let path = try result.get()
         defer { try? FileManager.default.removeItem(atPath: path) }
         XCTAssertEqual(path, ImagePaste.hostPath(id: id))
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), png)
+        XCTAssertEqual(progress.map(\.0), [0, png.count])
+        XCTAssertEqual(progress.map(\.1), [png.count, png.count])
     }
 
     func testRejectsOversizedPNG() {
@@ -77,9 +87,9 @@ final class ImagePasteTests: XCTestCase {
         let place = Place(user: "ada", host: "whiterun", backend: .herdr)
         let png = Data("png".utf8)
         XCTAssertEqual(
-            ImagePaste.deliver(png: png, place: place) { _, _ in
+            ImagePaste.deliver(png: png, place: place, upload: { _, _ in
                 XCTFail("must not upload without a control socket")
-            },
+            }),
             .failure(.uploadFailed)
         )
     }
@@ -94,11 +104,29 @@ final class ImagePasteTests: XCTestCase {
         let id = UUID()
         let png = Data("png".utf8)
         var uploaded: (Data, [String])?
-        let result = ImagePaste.deliver(png: png, place: place, pasteID: id) { data, arguments in
+        let result = ImagePaste.deliver(png: png, place: place, pasteID: id, upload: { data, arguments in
             uploaded = (data, arguments)
-        }
+        })
         XCTAssertEqual(try result.get(), ImagePaste.hostPath(id: id))
         XCTAssertEqual(uploaded?.0, png)
         XCTAssertEqual(uploaded?.1, Driver.uploadArguments(for: place, remotePath: ImagePaste.hostPath(id: id)))
+    }
+
+    func testWriteChunksReportsEachChunk() throws {
+        let data = Data(repeating: 0x61, count: ImagePaste.chunkBytes + 10)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: url)
+        defer {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: url)
+        }
+        var progress: [(Int, Int)] = []
+        try ImagePaste.writeChunks(data, to: handle) { sent, total in
+            progress.append((sent, total))
+        }
+        XCTAssertEqual(progress.map(\.0), [ImagePaste.chunkBytes, data.count])
+        XCTAssertEqual(progress.map(\.1), [data.count, data.count])
+        XCTAssertEqual(try Data(contentsOf: url), data)
     }
 }
