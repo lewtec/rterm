@@ -179,6 +179,7 @@ final class AppStore {
         }
         if attach.connectAttempt >= PlaceAttach.maxConnectAttempts {
             mutateAttach(id) { $0.failConnectTimeout() }
+            connectProgressByID[id]?.finish()
             return
         }
         let next = attach.connectAttempt + 1

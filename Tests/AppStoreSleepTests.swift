@@ -39,15 +39,18 @@ final class AppStoreSleepTests: XCTestCase {
         let first = try XCTUnwrap(store.places.first?.id)
         store.select(first)
         XCTAssertEqual(store.attaches[first]?.connectAttempt, 1)
+        XCTAssertTrue(store.connectProgress(for: first)?.isVisible ?? false)
 
         store.noteConnectTimeout(first)
         XCTAssertEqual(store.attaches[first]?.phase, .attaching(PlaceAttach.connectingTitle))
         XCTAssertEqual(store.attaches[first]?.connectAttempt, 2)
         XCTAssertEqual(store.attaches[first]?.generation, 1)
+        XCTAssertTrue(store.connectProgress(for: first)?.isVisible ?? false)
 
         store.noteConnectTimeout(first)
         store.noteConnectTimeout(first)
         XCTAssertEqual(store.attaches[first]?.phase, .failed(PlaceAttach.timedOutMessage))
+        XCTAssertFalse(store.connectProgress(for: first)?.isVisible ?? true)
 
         store.handleExit(first, code: 255, generation: store.attaches[first]?.generation)
         XCTAssertEqual(store.attaches[first]?.phase, .failed(PlaceAttach.timedOutMessage))
@@ -67,6 +70,7 @@ final class AppStoreSleepTests: XCTestCase {
         store.reconnect(first)
         XCTAssertEqual(store.connectProgress(for: first)?.crumbs.count, 2)
         XCTAssertEqual(store.tabState(for: first), .attaching)
+        XCTAssertTrue(store.connectProgress(for: first)?.isVisible ?? false)
         store.dropAllConnections()
         XCTAssertEqual(store.connectProgress(for: first)?.crumbs ?? ["x"], [])
         XCTAssertFalse(store.connectProgress(for: first)?.isVisible ?? true)

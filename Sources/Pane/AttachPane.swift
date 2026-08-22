@@ -59,6 +59,7 @@ private struct AttachTerminal: NSViewRepresentable {
         view.onTTYOutput = {
             onTTY()
             context.coordinator.stopWatch()
+            progress.finish()
         }
         view.startProcess(
             executable: launch.executable,
@@ -148,10 +149,6 @@ private struct AttachTerminal: NSViewRepresentable {
             try? handle?.close()
             handle = nil
             leftover = Data()
-            let progress = progress
-            Task { @MainActor in
-                progress.finish()
-            }
             if let logURL {
                 try? FileManager.default.removeItem(at: logURL)
             }
