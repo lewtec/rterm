@@ -207,6 +207,7 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var metalFrameWork: DispatchWorkItem?
     private var metalIdlePump: Timer?
     private var lastKeyUptime: UInt64 = 0
+    private var lastPaintedCursor: (x: Int, y: Int)?
 
     private static let hostFrameDelay: TimeInterval = 1.0 / 24.0
     private static let keyEchoWindowNs: UInt64 = 80_000_000
@@ -332,7 +333,7 @@ final class FillTerminalView: LocalProcessTerminalView {
         if isUsingMetalRenderer, !hadMetal {
             terminal.updateFullScreen()
         }
-        presentMetalFrame()
+        presentMetalFrame(force: true)
     }
 
     func pauseMetalDisplay() {
@@ -351,11 +352,18 @@ final class FillTerminalView: LocalProcessTerminalView {
         pauseMetalDisplay()
     }
 
-    private func presentMetalFrame() {
+    private func presentMetalFrame(force: Bool = false) {
         guard !isHidden, windowIsVisible, let metalKitView else {
             return
         }
+        let cursor = terminal.getCursorLocation()
+        let cursorUnchanged = lastPaintedCursor.map { $0 == cursor } ?? false
+        if !force, terminal.getUpdateRange() == nil, cursorUnchanged {
+            return
+        }
         metalKitView.draw()
+        terminal.clearUpdateRange()
+        lastPaintedCursor = cursor
     }
 
     private func scheduleThrottledMetalFrame() {
@@ -382,7 +390,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         let timer = Timer(timeInterval: Self.idleFrameInterval, repeats: true) { [weak self] _ in
-            self?.presentMetalFrame()
+            self?.presentMetalFrame(force: true)
         }
         RunLoop.main.add(timer, forMode: .common)
         metalIdlePump = timer
@@ -402,7 +410,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         startMetalIdlePump()
-        presentMetalFrame()
+        presentMetalFrame(force: true)
     }
 
     private func installOcclusionObserver() {
@@ -463,7 +471,7 @@ final class FillTerminalView: LocalProcessTerminalView {
         }
         super.setFrameSize(newSize)
         if !isHidden, windowIsVisible, isUsingMetalRenderer {
-            presentMetalFrame()
+            presentMetalFrame(force: true)
         }
     }
 
