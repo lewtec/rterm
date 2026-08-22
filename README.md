@@ -48,11 +48,10 @@ You need Xcode and [mise](https://mise.jdx.dev/).
 git clone https://github.com/lewtec/rterm.git
 cd rterm
 mise install
-mise run build
-open "$(echo ~/Library/Developer/Xcode/DerivedData/rterm-*/Build/Products/Debug/rterm.app)"
+mise run
 ```
 
-`mise run generate` writes `rterm.xcodeproj`. `mise run test` runs the unit tests.
+`mise run` builds and launches. `mise run generate` writes `rterm.xcodeproj`. `mise run test` runs the unit tests.
 
 ## Release
 
