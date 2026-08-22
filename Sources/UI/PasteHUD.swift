@@ -1,29 +1,51 @@
 import SwiftUI
 
 enum PasteHUD: Equatable {
-    case working(String)
+    case working(String, sent: Int, total: Int)
     case failed(String)
 
     static let failClearNanoseconds: UInt64 = 1_500_000_000
 
     static var failure: PasteHUD { .failed("Paste failed") }
 
-    static func working(isLocal: Bool) -> PasteHUD {
-        .working(isLocal ? "Writing image…" : "Uploading image…")
+    static func working(isLocal: Bool, sent: Int = 0, total: Int) -> PasteHUD {
+        .working(
+            isLocal ? "Writing image…" : "Uploading image…",
+            sent: sent,
+            total: total
+        )
     }
 
     var message: String {
         switch self {
-        case .working(let text), .failed(let text):
+        case .working(let text, _, _), .failed(let text):
             return text
         }
     }
 
-    var showsSpinner: Bool {
-        if case .working = self {
-            return true
+    var fraction: Double? {
+        switch self {
+        case .working(_, let sent, let total):
+            guard total > 0 else {
+                return 0
+            }
+            return min(1, Double(sent) / Double(total))
+        case .failed:
+            return nil
         }
-        return false
+    }
+
+    var percent: Int {
+        Int(((fraction ?? 0) * 100).rounded())
+    }
+
+    var accessibilityText: String {
+        switch self {
+        case .working(let text, _, _):
+            return "\(text) \(percent) percent"
+        case .failed(let text):
+            return text
+        }
     }
 }
 
@@ -31,13 +53,16 @@ struct PasteHUDView: View {
     var state: PasteHUD
 
     var body: some View {
-        HStack(spacing: 8) {
-            if state.showsSpinner {
-                ActivitySpinner(size: 16, color: .white)
-            }
+        VStack(alignment: .leading, spacing: 6) {
             Text(state.message)
                 .font(.caption)
                 .foregroundStyle(.white)
+            if let fraction = state.fraction {
+                ProgressView(value: fraction)
+                    .progressViewStyle(.linear)
+                    .tint(.white)
+                    .frame(width: 160)
+            }
         }
         .padding(8)
         .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
@@ -45,6 +70,6 @@ struct PasteHUDView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(state.message)
+        .accessibilityLabel(state.accessibilityText)
     }
 }

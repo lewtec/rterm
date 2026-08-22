@@ -19,6 +19,7 @@ enum ImagePastePlan: Equatable {
 
 enum ImagePaste {
     static let maxBytes = 10 * 1024 * 1024
+    static let chunkBytes = 64 * 1024
 
     static func plan(
         hasImage: Bool,
@@ -62,15 +63,18 @@ enum ImagePaste {
         place: Place,
         pasteID: UUID = UUIDV7.generate(),
         fileManager: FileManager = .default,
-        upload: (Data, [String]) throws -> Void = ImagePaste.sshCat
+        onProgress: ((Int, Int) -> Void)? = nil,
+        upload: ((Data, [String]) throws -> Void)? = nil
     ) -> Result<String, ImagePasteError> {
         if png.count > maxBytes {
             return .failure(.tooLarge)
         }
         let path = hostPath(id: pasteID)
+        onProgress?(0, png.count)
         if place.isLocal {
             do {
                 try png.write(to: URL(fileURLWithPath: path), options: .atomic)
+                onProgress?(png.count, png.count)
                 return .success(path)
             } catch {
                 return .failure(.writeFailed)
@@ -80,7 +84,13 @@ enum ImagePaste {
             return .failure(.uploadFailed)
         }
         do {
-            try upload(png, Driver.uploadArguments(for: place, remotePath: path))
+            let arguments = Driver.uploadArguments(for: place, remotePath: path)
+            if let upload {
+                try upload(png, arguments)
+                onProgress?(png.count, png.count)
+            } else {
+                try sshCat(png, arguments: arguments, onProgress: onProgress)
+            }
             return .success(path)
         } catch {
             return .failure(.uploadFailed)
@@ -100,7 +110,25 @@ enum ImagePaste {
         return rep.representation(using: .png, properties: [:])
     }
 
-    static func sshCat(_ data: Data, arguments: [String]) throws {
+    static func writeChunks(
+        _ data: Data,
+        to handle: FileHandle,
+        onProgress: ((Int, Int) -> Void)? = nil
+    ) throws {
+        var sent = 0
+        while sent < data.count {
+            let end = min(sent + chunkBytes, data.count)
+            try handle.write(contentsOf: data[sent..<end])
+            sent = end
+            onProgress?(sent, data.count)
+        }
+    }
+
+    static func sshCat(
+        _ data: Data,
+        arguments: [String],
+        onProgress: ((Int, Int) -> Void)? = nil
+    ) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: Driver.sshExecutable)
         process.arguments = arguments
@@ -114,7 +142,7 @@ enum ImagePaste {
                 process.terminate()
             }
         }
-        try input.fileHandleForWriting.write(contentsOf: data)
+        try writeChunks(data, to: input.fileHandleForWriting, onProgress: onProgress)
         try input.fileHandleForWriting.close()
         process.waitUntilExit()
         if process.terminationStatus != 0 {
