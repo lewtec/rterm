@@ -12,12 +12,17 @@ description = "Generate the Xcode project"
 depends = ["generate"]
 
 [tasks.build]
+description = "Release-build the Mac app"
+run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Release -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation build"
+depends = ["generate"]
+
+[tasks.debug]
 description = "Debug-build the Mac app"
 run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation build"
 depends = ["generate"]
 
 [tasks.run]
-description = "Debug-build and launch the Mac app"
+description = "Release-build and launch the Mac app"
 alias = "default"
 depends = ["build"]
 run = '''
@@ -26,7 +31,7 @@ dir="$(
   xcodebuild \
     -project rterm.xcodeproj \
     -scheme rterm \
-    -configuration Debug \
+    -configuration Release \
     -destination 'platform=macOS,arch=arm64' \
     -skipPackagePluginValidation \
     -showBuildSettings \

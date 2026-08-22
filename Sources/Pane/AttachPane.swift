@@ -209,8 +209,8 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var lastKeyUptime: UInt64 = 0
     private var lastPaintedCursor: (x: Int, y: Int)?
 
-    private static let hostFrameDelay: TimeInterval = 1.0 / 24.0
-    private static let keyEchoWindowNs: UInt64 = 80_000_000
+    private static let hostFrameDelay: TimeInterval = 1.0 / 10.0
+    private static let keyEchoWindowNs: UInt64 = 200_000_000
     private static let idleFrameInterval: TimeInterval = 0.7
 
     override func paste(_ sender: Any) {
