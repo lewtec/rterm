@@ -302,7 +302,7 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     override func setNeedsDisplay(_ invalidRect: NSRect) {
-        if isHidden {
+        if isUsingMetalRenderer || isHidden {
             return
         }
         super.setNeedsDisplay(invalidRect)
@@ -311,9 +311,11 @@ final class FillTerminalView: LocalProcessTerminalView {
     override func dataReceived(slice: ArraySlice<UInt8>) {
         if isHidden || !windowIsVisible {
             terminal.feed(buffer: slice)
+        } else if isUsingMetalRenderer {
+            terminal.feed(buffer: slice)
+            scheduleThrottledMetalFrame()
         } else {
             super.dataReceived(slice: slice)
-            scheduleThrottledMetalFrame()
         }
         guard !announcedTTY, !slice.isEmpty else {
             return
@@ -334,11 +336,11 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     func pauseMetalDisplay() {
-        guard let metalView else {
+        guard let metalKitView else {
             return
         }
-        metalView.enableSetNeedsDisplay = false
-        metalView.isPaused = true
+        metalKitView.enableSetNeedsDisplay = false
+        metalKitView.isPaused = true
     }
 
     func sleepMetal() {
@@ -350,10 +352,10 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     private func presentMetalFrame() {
-        guard !isHidden, windowIsVisible, let metalView else {
+        guard !isHidden, windowIsVisible, let metalKitView else {
             return
         }
-        metalView.draw()
+        metalKitView.draw()
     }
 
     private func scheduleThrottledMetalFrame() {
@@ -386,7 +388,7 @@ final class FillTerminalView: LocalProcessTerminalView {
         metalIdlePump = timer
     }
 
-    private var metalView: MTKView? {
+    private var metalKitView: MTKView? {
         subviews.first { $0 is MTKView } as? MTKView
     }
 
@@ -460,6 +462,9 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         super.setFrameSize(newSize)
+        if !isHidden, windowIsVisible, isUsingMetalRenderer {
+            presentMetalFrame()
+        }
     }
 
     private func hideReservedScroller() {
