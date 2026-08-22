@@ -106,7 +106,7 @@ private struct AttachTerminal: NSViewRepresentable {
         let progress: ConnectProgress
         var logURL: URL?
         var onTimeout: () -> Void
-        private var timer: Timer?
+        private var logSource: DispatchSourceFileSystemObject?
         private var handle: FileHandle?
         private var leftover = Data()
         private var watchdog: Watchdog?
@@ -140,17 +140,26 @@ private struct AttachTerminal: NSViewRepresentable {
             }
             FileManager.default.createFile(atPath: logURL.path, contents: nil)
             handle = try? FileHandle(forReadingFrom: logURL)
-            let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            guard let handle else {
+                return
+            }
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: handle.fileDescriptor,
+                eventMask: [.extend, .write],
+                queue: .main
+            )
+            source.setEventHandler { [weak self] in
                 self?.pump()
             }
-            RunLoop.main.add(timer, forMode: .common)
-            self.timer = timer
+            logSource = source
+            source.resume()
+            pump()
         }
 
         func stopWatch() {
             cancelConnectWatchdog()
-            timer?.invalidate()
-            timer = nil
+            logSource?.cancel()
+            logSource = nil
             try? handle?.close()
             handle = nil
             leftover = Data()
