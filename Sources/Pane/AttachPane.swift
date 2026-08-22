@@ -12,6 +12,8 @@ struct AttachPane: View {
     var onTTY: () -> Void
     var onTimeout: () -> Void
 
+    @State private var pasteHUD: PasteHUD?
+
     var body: some View {
         ZStack {
             AttachTerminal(
@@ -21,11 +23,15 @@ struct AttachPane: View {
                 progress: progress,
                 onExit: onExit,
                 onTTY: onTTY,
-                onTimeout: onTimeout
+                onTimeout: onTimeout,
+                onPasteHUD: { pasteHUD = $0 }
             )
             if progress.isVisible {
                 ConnectOverlay(headline: progress.headline, crumbs: progress.crumbs)
                     .allowsHitTesting(false)
+            }
+            if let pasteHUD {
+                PasteHUDView(state: pasteHUD)
             }
         }
     }
@@ -39,6 +45,7 @@ private struct AttachTerminal: NSViewRepresentable {
     var onExit: (Int32?) -> Void
     var onTTY: () -> Void
     var onTimeout: () -> Void
+    var onPasteHUD: (PasteHUD?) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onExit: onExit, progress: progress, onTimeout: onTimeout)
@@ -46,6 +53,7 @@ private struct AttachTerminal: NSViewRepresentable {
 
     func makeNSView(context: Context) -> FillTerminalView {
         let view = FillTerminalView(frame: .zero)
+        view.onPasteHUD = onPasteHUD
         view.processDelegate = context.coordinator
         let logURL = place.isLocal ? nil : Driver.verboseLogURL(placeID: place.id, generation: generation)
         context.coordinator.logURL = logURL
@@ -78,6 +86,7 @@ private struct AttachTerminal: NSViewRepresentable {
     func updateNSView(_ nsView: FillTerminalView, context: Context) {
         context.coordinator.onExit = onExit
         context.coordinator.onTimeout = onTimeout
+        nsView.onPasteHUD = onPasteHUD
         nsView.processDelegate = context.coordinator
         nsView.place = place
         if nsView.isHidden == active {
@@ -94,6 +103,7 @@ private struct AttachTerminal: NSViewRepresentable {
     static func dismantleNSView(_ nsView: FillTerminalView, coordinator: Coordinator) {
         coordinator.stopWatch()
         nsView.cancelImagePaste()
+        nsView.onPasteHUD = nil
         nsView.teardownRender()
         nsView.terminate()
     }
@@ -205,6 +215,7 @@ private struct AttachTerminal: NSViewRepresentable {
 /// strip. Hide that gutter so the cell grid can use the full view.
 final class FillTerminalView: LocalProcessTerminalView {
     var onTTYOutput: (() -> Void)?
+    var onPasteHUD: ((PasteHUD?) -> Void)?
     var place = Place(user: "", host: "", backend: .herdr)
     private var announcedTTY = false
     private var pasteGeneration = 0
@@ -224,6 +235,7 @@ final class FillTerminalView: LocalProcessTerminalView {
 
     func cancelImagePaste() {
         pasteGeneration += 1
+        onPasteHUD?(nil)
         removeKeyMonitor()
     }
 
@@ -239,12 +251,13 @@ final class FillTerminalView: LocalProcessTerminalView {
             return false
         }
         if png.count > ImagePaste.maxBytes {
-            NSSound.beep()
+            presentPasteFailure()
             return true
         }
         pasteGeneration += 1
         let generation = pasteGeneration
         let place = place
+        onPasteHUD?(PasteHUD.working(isLocal: place.isLocal))
         Task { @MainActor [weak self] in
             let result = await Task.detached {
                 ImagePaste.deliver(png: png, place: place)
@@ -254,15 +267,36 @@ final class FillTerminalView: LocalProcessTerminalView {
         return true
     }
 
+    private func presentPasteFailure() {
+        pasteGeneration += 1
+        let generation = pasteGeneration
+        NSSound.beep()
+        onPasteHUD?(PasteHUD.failure)
+        clearPasteHUD(after: PasteHUD.failClearNanoseconds, generation: generation)
+    }
+
     private func finishImagePaste(_ result: Result<String, ImagePasteError>, generation: Int) {
         guard generation == pasteGeneration else {
             return
         }
         switch result {
         case .success(let path):
+            onPasteHUD?(nil)
             pastePath(path)
         case .failure:
             NSSound.beep()
+            onPasteHUD?(PasteHUD.failure)
+            clearPasteHUD(after: PasteHUD.failClearNanoseconds, generation: generation)
+        }
+    }
+
+    private func clearPasteHUD(after nanoseconds: UInt64, generation: Int) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard let self, self.pasteGeneration == generation else {
+                return
+            }
+            self.onPasteHUD?(nil)
         }
     }
 

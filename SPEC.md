@@ -148,6 +148,8 @@ Use the clipboard only when it has image data and no text. A copy that has both 
 
 Each paste uses a new UUIDv7 `<id>`. Cap the PNG at 10 MiB. A larger image or a failed write beeps. Do not paste a truncated file.
 
+While write or upload runs, show a corner overlay on the pane: spinner and Writing image… or Uploading image…. On failure, keep the beep and show Paste failed for 1.5 seconds. The overlay must not steal clicks. Do not draw the image.
+
 Remote upload uses a second `/usr/bin/ssh` on the attach ControlPath:
 
 ```text
