@@ -39,6 +39,13 @@ enum PasteHUD: Equatable {
         Int(((fraction ?? 0) * 100).rounded())
     }
 
+    var showsSpinner: Bool {
+        if case .working = self {
+            return true
+        }
+        return false
+    }
+
     var accessibilityText: String {
         switch self {
         case .working(let text, _, _):
@@ -54,9 +61,14 @@ struct PasteHUDView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(state.message)
-                .font(.caption)
-                .foregroundStyle(.white)
+            HStack(spacing: 8) {
+                if state.showsSpinner {
+                    ActivitySpinner(size: 16, color: .white)
+                }
+                Text(state.message)
+                    .font(.caption)
+                    .foregroundStyle(.white)
+            }
             if let fraction = state.fraction {
                 ProgressView(value: fraction)
                     .progressViewStyle(.linear)

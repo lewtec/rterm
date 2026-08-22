@@ -18,6 +18,12 @@ final class PasteHUDTests: XCTestCase {
         XCTAssertNil(PasteHUD.failure.fraction)
     }
 
+    func testSpinnerOnlyWhileWorking() {
+        XCTAssertTrue(PasteHUD.working(isLocal: true, total: 1).showsSpinner)
+        XCTAssertTrue(PasteHUD.working(isLocal: false, sent: 1, total: 2).showsSpinner)
+        XCTAssertFalse(PasteHUD.failure.showsSpinner)
+    }
+
     func testFractionAndPercent() {
         XCTAssertEqual(PasteHUD.working(isLocal: false, sent: 1, total: 4).fraction, 0.25)
         XCTAssertEqual(PasteHUD.working(isLocal: false, sent: 1, total: 3).percent, 33)
