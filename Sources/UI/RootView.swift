@@ -136,41 +136,26 @@ private struct CatalogChrome: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
                 ForEach(places) { place in
-                    Button {
-                        store.select(place.id)
-                    } label: {
-                        PlaceTab(
-                            place: place,
-                            state: store.tabState(for: place.id),
-                            selected: store.selectedID == place.id
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    PlaceTab(
+                        place: place,
+                        state: store.tabState(for: place.id),
+                        selected: store.selectedID == place.id
+                    )
                     .overlay {
                         if dropTargetID == place.id {
                             Capsule().strokeBorder(Color.accentColor, lineWidth: 2)
                         }
                     }
-                    .draggable(place.id.uuidString)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let raw = items.first, let id = UUID(uuidString: raw) else {
-                            return false
-                        }
-                        store.movePlace(id, onto: place.id)
-                        return true
-                    } isTargeted: { hovering in
-                        dropTargetID = hovering ? place.id : nil
-                    }
-                    .contextMenu {
-                        Button("Reconnect") {
-                            store.reconnect(place.id)
-                        }
-                        Button("Edit…") {
-                            store.beginEdit(place)
-                        }
-                        Button("Delete", role: .destructive) {
-                            store.delete(place.id)
-                        }
+                    .overlay {
+                        PlaceTabHandle(
+                            id: place.id,
+                            onSelect: { store.select(place.id) },
+                            onMove: { store.movePlace($0, onto: place.id) },
+                            onTargeted: { dropTargetID = $0 ? place.id : nil },
+                            onReconnect: { store.reconnect(place.id) },
+                            onEdit: { store.beginEdit(place) },
+                            onDelete: { store.delete(place.id) }
+                        )
                     }
                 }
             }
