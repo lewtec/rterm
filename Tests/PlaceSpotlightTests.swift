@@ -167,16 +167,4 @@ final class AppStoreSpotlightTests: XCTestCase {
         XCTAssertEqual(store.selectedID, id)
     }
 
-    func testPlaceQueryReadsFromStore() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let io = CatalogIO(fileURL: directory.appendingPathComponent("places.toml"))
-        let store = AppStore(catalogIO: io)
-        AppRuntime.store = store
-        defer { AppRuntime.store = nil }
-        let first = try XCTUnwrap(store.places.first)
-        let found = try await PlaceEntityQuery().entities(for: [first.id])
-        XCTAssertEqual(found.map(\.id), [first.id])
-        XCTAssertEqual(found.first?.name, first.displayLabel)
-    }
 }

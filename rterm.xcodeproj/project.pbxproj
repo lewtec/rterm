@@ -16,7 +16,6 @@
 		1860C8A1ED7272D4E5718DB9 /* DriverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBB72640D125653205D9483 /* DriverTests.swift */; };
 		1DB417114EC95E1E350884F0 /* AttachExit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA81E5C59E0B6A198E2FA5F /* AttachExit.swift */; };
 		26C887D05A6FEA60AFC5085A /* Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3239F057545DA582C4DA868 /* Place.swift */; };
-		2C70E0323C49E302087DF223 /* PlaceIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DB9894FEE277A54EFE4341 /* PlaceIntents.swift */; };
 		2CB9A0B9A2E99886C0729E1E /* PlaceFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DBB215DBDB1D8A68845D3EB /* PlaceFile.swift */; };
 		2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F4691BEA6EC153186C7DDB2 /* Driver.swift */; };
 		2E0F2E61B6CB66A439A9C75A /* AttachExitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 844DA7142EB561906510A8DF /* AttachExitTests.swift */; };
@@ -49,6 +48,7 @@
 		D590FC3A64D011776E3A29EA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5D131B6C8C9BE149C0616626 /* Assets.xcassets */; };
 		D69C2A0CD7B282AE61DCED26 /* NotchTabPackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */; };
 		D7AA0A09F97878B1370D1047 /* CatalogPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6939E617F234D4AC8542CDA8 /* CatalogPaths.swift */; };
+		DA72D445984C92FF3C907C4E /* AppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A368265D33196F318FE029EB /* AppRuntime.swift */; };
 		DA755DFA3BEADFF4741427C2 /* CatalogCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */; };
 		E88E23005C60D24EF3FCB347 /* ImagePasteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30F910EB261883D838E755E7 /* ImagePasteTests.swift */; };
 		F59318F3CF597FD582765AD0 /* PlaceLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2785E8BD70205C99DDEF46 /* PlaceLink.swift */; };
@@ -97,7 +97,7 @@
 		934A08F963745061B6816150 /* TabState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabState.swift; sourceTree = "<group>"; };
 		9BF5E743D73142180BDA5114 /* PlaceAttach.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceAttach.swift; sourceTree = "<group>"; };
 		9CD57060ED4B2E010486DD68 /* PendingPlace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingPlace.swift; sourceTree = "<group>"; };
-		A1DB9894FEE277A54EFE4341 /* PlaceIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceIntents.swift; sourceTree = "<group>"; };
+		A368265D33196F318FE029EB /* AppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRuntime.swift; sourceTree = "<group>"; };
 		A95A6A4486807E4278708C64 /* rterm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rterm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAF0B9991E30C4BA7560A399 /* PasteHUDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteHUDTests.swift; sourceTree = "<group>"; };
 		AC2C804E50828522F719F5F5 /* ConnectOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectOverlay.swift; sourceTree = "<group>"; };
@@ -166,8 +166,8 @@
 			isa = PBXGroup;
 			children = (
 				FE0ADB6888AB30381DF3D61E /* AppDelegate.swift */,
+				A368265D33196F318FE029EB /* AppRuntime.swift */,
 				C10D918CE205CCF37284CC57 /* AppStore.swift */,
-				A1DB9894FEE277A54EFE4341 /* PlaceIntents.swift */,
 				DE2785E8BD70205C99DDEF46 /* PlaceLink.swift */,
 				ACAF5E633103DC73FF308120 /* PlaceSpotlight.swift */,
 				F304BAF27B86FA24B0F6217A /* RtermApp.swift */,
@@ -362,6 +362,7 @@
 			files = (
 				5DCB11BAEA20D4FAA1479602 /* ActivitySpinner.swift in Sources */,
 				C2A16D9D1495470E43815BC4 /* AppDelegate.swift in Sources */,
+				DA72D445984C92FF3C907C4E /* AppRuntime.swift in Sources */,
 				8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */,
 				1DB417114EC95E1E350884F0 /* AttachExit.swift in Sources */,
 				15339B4A873B4E8367A79B1B /* AttachPane.swift in Sources */,
@@ -381,7 +382,6 @@
 				8584BD7BB2BB7D26CF66FAC2 /* PlaceAttach.swift in Sources */,
 				616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */,
 				2CB9A0B9A2E99886C0729E1E /* PlaceFile.swift in Sources */,
-				2C70E0323C49E302087DF223 /* PlaceIntents.swift in Sources */,
 				F59318F3CF597FD582765AD0 /* PlaceLink.swift in Sources */,
 				FBC09C308AEC8730366199F1 /* PlaceSpotlight.swift in Sources */,
 				718285184E6FF9E805DA3DA6 /* PlaceTabHandle.swift in Sources */,
