@@ -128,6 +128,28 @@ enum CatalogCodec {
         return lines.joined(separator: "\n")
     }
 
+    static func decodePlaceFile(_ text: String) throws -> Place {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.contains("[[place]]") || trimmed.contains("version") {
+            let wrapped = trimmed.contains("version")
+                ? trimmed
+                : "version = \(currentVersion)\n\n\(trimmed)"
+            let document = try decode(wrapped)
+            guard let place = document.places.first else {
+                throw CatalogCodecError.missingField("place", 1)
+            }
+            return place
+        }
+        guard let place = Place.parseSwitchKey(trimmed) else {
+            throw CatalogCodecError.invalidValue("place", 1)
+        }
+        return place
+    }
+
+    static func encodePlaceFile(_ place: Place) -> String {
+        encode(CatalogDocument(version: currentVersion, places: [place]))
+    }
+
     private static func decodeScalar(_ raw: String, line: Int) throws -> String {
         if raw.hasPrefix("\"") {
             guard raw.hasSuffix("\""), raw.count >= 2 else {

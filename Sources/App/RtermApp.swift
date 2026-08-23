@@ -2,8 +2,16 @@ import SwiftUI
 
 @main
 struct RtermApp: App {
-    @State private var store = AppStore()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var store: AppStore
     @StateObject private var chrome = WindowChrome()
+
+    init() {
+        let store = AppStore()
+        _store = State(initialValue: store)
+        AppRuntime.store = store
+        PlaceLink.claimHandler()
+    }
 
     var body: some Scene {
         Window("rterm", id: "main") {
@@ -11,6 +19,7 @@ struct RtermApp: App {
                 .environment(store)
                 .environmentObject(chrome)
                 .frame(minWidth: 720, minHeight: 420)
+                .onOpenURL { AppRuntime.handle($0) }
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: 960, height: 600)

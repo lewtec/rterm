@@ -19,7 +19,7 @@ struct PlaceEditorSheet: View {
                     TextField("Session", text: session)
                 }
                 TextField("Label", text: label, prompt: Text("optional"))
-                Text(CatalogPaths.placesFile.path)
+                Text(CatalogPaths.placesDirectory.path)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)

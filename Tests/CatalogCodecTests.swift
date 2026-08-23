@@ -25,6 +25,8 @@ final class CatalogCodecTests: XCTestCase {
         XCTAssertEqual(decoded.places, places)
         let herdrOnly = CatalogCodec.encode(CatalogDocument(version: 1, places: [places[0]]))
         XCTAssertFalse(herdrOnly.contains("session"))
+        let placeFile = CatalogCodec.encodePlaceFile(places[1])
+        XCTAssertEqual(try CatalogCodec.decodePlaceFile(placeFile), places[1])
     }
 
     func testHerdrSessionIsDropped() throws {
