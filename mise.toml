@@ -48,6 +48,37 @@ fi
 open "$app"
 '''
 
+[tasks.app]
+description = "Install Release rterm.app to /Applications and print APP"
+depends = ["build"]
+run = '''
+set -euo pipefail
+dir="$(
+  xcodebuild \
+    -project rterm.xcodeproj \
+    -scheme rterm \
+    -configuration Release \
+    -destination 'platform=macOS,arch=arm64' \
+    -skipPackagePluginValidation \
+    SWIFT_ENABLE_TESTABILITY=YES \
+    ENABLE_TESTABILITY=YES \
+    -showBuildSettings \
+    2>/dev/null \
+  | awk -F' = ' '/^    BUILT_PRODUCTS_DIR / { print $2; exit }'
+)"
+built="${dir}/rterm.app"
+if [[ -z "$dir" || ! -d "$built" ]]; then
+  echo "app: missing ${built:-rterm.app}" >&2
+  exit 1
+fi
+killall rterm 2>/dev/null || true
+APP="/Applications/rterm.app"
+rm -rf "$APP"
+cp -R "$built" "$APP"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
+echo "APP=$APP"
+'''
+
 [tasks.test]
 description = "Run catalog unit tests"
 run = "xcodebuild -project rterm.xcodeproj -scheme rterm -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation test"

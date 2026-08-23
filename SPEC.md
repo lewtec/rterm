@@ -162,17 +162,19 @@ Do not implement OSC 5522 or inline graphics for this.
 
 ## Catalog
 
-Path: `~/Library/Application Support/rterm/places.toml`
+Path: `~/Documents/rterm/*.rterm-place`
 
-Do not use `~/.config`. Do not use `UserDefaults` as the store. Do not use iCloud in v1.
+Each place is one TOML file. Filename sort is tab order (`00-ada@whiterun-herdr.rterm-place`). There is no separate order field.
 
-Format is TOML with a `version` field. List order is tab order. There is no separate order field.
+A CRUD GUI in the app reads and writes these files. Add, edit, and delete places there.
 
-A CRUD GUI in the app reads and writes this file. Add, edit, and delete places there.
+If a file in that directory changes on disk, reload.
 
-If the file changes on disk, reload it.
+On first launch, migrate `~/Library/Application Support/rterm/places.toml` into that directory and delete the old file.
 
 Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`.
+
+Do not use `~/.config`. Do not use `UserDefaults` as the store. Documents is the store so Spotlight can open the files.
 
 ## Stack
 

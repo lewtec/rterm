@@ -24,6 +24,7 @@ final class AppStore {
         if let selectedID {
             select(selectedID)
         }
+        consumePendingPlace()
     }
 
     var selectedPlace: Place? {
@@ -42,6 +43,43 @@ final class AppStore {
     func selectPlace(at index: Int) {
         guard places.indices.contains(index) else { return }
         select(places[index].id)
+    }
+
+    func openPlace(_ id: UUID) {
+        guard places.contains(where: { $0.id == id }) else {
+            return
+        }
+        select(id)
+    }
+
+    func openPlace(switchKey: String) {
+        if let id = UUID(uuidString: switchKey) {
+            openPlace(id)
+            return
+        }
+        if let existing = places.first(where: { $0.matchesSwitchKey(switchKey) }) {
+            select(existing.id)
+            return
+        }
+        guard let parsed = Place.parseSwitchKey(switchKey) else {
+            return
+        }
+        if let existing = places.first(where: { $0.matchesSwitchKey(parsed.switchKey) }) {
+            select(existing.id)
+            return
+        }
+        places.append(parsed)
+        attaches[parsed.id] = PlaceAttach()
+        _ = ensureProgress(parsed.id)
+        persist()
+        select(parsed.id)
+    }
+
+    func consumePendingPlace() {
+        guard let key = PendingPlace.take(from: catalogIO.pendingPlaceFile) else {
+            return
+        }
+        openPlace(switchKey: key)
     }
 
     func reconnect(_ id: UUID) {
@@ -205,7 +243,7 @@ final class AppStore {
             catalogError = error.localizedDescription
             return
         }
-        NSWorkspace.shared.activateFileViewerSelecting([CatalogPaths.placesFile])
+        NSWorkspace.shared.activateFileViewerSelecting([catalogIO.directoryURL])
     }
 
     func reloadFromDisk() {
@@ -262,6 +300,7 @@ final class AppStore {
             try catalogIO.startWatching { [weak self] in
                 Task { @MainActor in
                     self?.reloadFromDisk()
+                    self?.consumePendingPlace()
                 }
             }
         } catch {

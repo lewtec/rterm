@@ -40,6 +40,7 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         ENABLE_TESTABILITY: YES
         SWIFT_ENABLE_TESTABILITY: YES
+        INFOPLIST_FILE: Info.plist
     dependencies:
       - package: SwiftTerm
         product: SwiftTerm

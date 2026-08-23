@@ -21,7 +21,7 @@ A place is user, host, and backend (`herdr`, `tmux`, or `screen`). tmux and scre
 
 herdr attach uses the binary that owns `herdr.sock` on that machine. PATH `herdr` can be a different version.
 
-The catalog is `~/Library/Application Support/rterm/places.toml`. The app writes it. Edits on disk reload. Use **+** or **Place → Add Place…**.
+The catalog is `~/Documents/rterm/*.rterm-place`. The app writes it. Edits on disk reload. Use **+** or **Place → Add Place…**.
 
 Tab dots: grey idle, green alive, red failed. SSH keepalives make a dead path exit.
 
