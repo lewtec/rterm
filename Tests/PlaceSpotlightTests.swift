@@ -120,6 +120,38 @@ final class AppStoreSpotlightTests: XCTestCase {
         XCTAssertEqual(store.selectedID, second)
     }
 
+    func testMovePlaceRenumbersFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("places", isDirectory: true)
+        let first = Place(user: "ada", host: "whiterun", backend: .herdr)
+        let second = Place(user: "ada", host: "riverwood", backend: .herdr)
+        let third = Place(user: "ada", host: "riften", backend: .herdr)
+        let io = CatalogIO(directoryURL: directory)
+        try io.save(CatalogDocument(version: 1, places: [first, second, third]))
+        let store = AppStore(catalogIO: io)
+        store.movePlace(first.id, onto: third.id)
+        XCTAssertEqual(store.places.map(\.id), [second.id, third.id, first.id])
+        store.movePlace(first.id, onto: second.id)
+        XCTAssertEqual(store.places.map(\.id), [first.id, second.id, third.id])
+        store.movePlace(first.id, onto: first.id)
+        XCTAssertEqual(store.places.map(\.id), [first.id, second.id, third.id])
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            )
+            .filter { $0.pathExtension == PlaceFile.pathExtension }
+            .map(\.lastPathComponent)
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending },
+            [
+                PlaceFile.name(index: 0, place: first),
+                PlaceFile.name(index: 1, place: second),
+                PlaceFile.name(index: 2, place: third),
+            ]
+        )
+    }
+
     func testOpenPlaceCreatesMissingSwitchKeyOnce() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

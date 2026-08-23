@@ -164,9 +164,9 @@ Do not implement OSC 5522 or inline graphics for this.
 
 Path: `~/Documents/rterm/*.rterm-place`
 
-Each place is one TOML file. Filename sort is tab order (`00-ada@whiterun-herdr.rterm-place`). There is no separate order field.
+Each place is one TOML file. Filename sort is tab order (`00-ada@whiterun-herdr.rterm-place`). There is no separate order field. Drag tabs to reorder. Save rewrites every prefix from `00`.
 
-A CRUD GUI in the app reads and writes these files. Add, edit, and delete places there.
+A CRUD GUI in the app reads and writes these files. Add, edit, delete, and reorder places there.
 
 If a file in that directory changes on disk, reload.
 

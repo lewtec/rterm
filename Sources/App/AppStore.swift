@@ -173,6 +173,19 @@ final class AppStore {
         }
     }
 
+    func movePlace(_ id: UUID, onto destinationID: UUID) {
+        guard id != destinationID,
+              let from = places.firstIndex(where: { $0.id == id }),
+              let to = places.firstIndex(where: { $0.id == destinationID })
+        else {
+            return
+        }
+        var next = places
+        next.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        places = next
+        persist()
+    }
+
     func delete(_ id: UUID) {
         places.removeAll { $0.id == id }
         attaches[id] = nil
