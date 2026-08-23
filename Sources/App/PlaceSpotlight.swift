@@ -2,24 +2,13 @@ import CoreSpotlight
 import Foundation
 
 enum PlaceSpotlight {
-    static let domainIdentifier = "places"
-
     @MainActor
     static func publish() {
-        RtermShortcuts.updateAppShortcutParameters()
         importSpotlightDirectory()
         guard CSSearchableIndex.isIndexingAvailable() else {
             return
         }
-        CSSearchableIndex.default().deleteSearchableItems(
-            withDomainIdentifiers: [domainIdentifier],
-            completionHandler: nil
-        )
-        if #available(macOS 15.4, *) {
-            Task {
-                try? await CSSearchableIndex.default().deleteAppEntities(ofType: PlaceEntity.self)
-            }
-        }
+        CSSearchableIndex.default().deleteAllSearchableItems(completionHandler: nil)
     }
 
     private static func importSpotlightDirectory() {
