@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct RtermApp: App {
+    static let mainWindowID = "main"
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store: AppStore
     @StateObject private var chrome = WindowChrome()
@@ -14,13 +16,15 @@ struct RtermApp: App {
     }
 
     var body: some Scene {
-        Window("rterm", id: "main") {
+        Window("rterm", id: RtermApp.mainWindowID) {
             RootView()
                 .environment(store)
                 .environmentObject(chrome)
                 .frame(minWidth: 720, minHeight: 420)
                 .onOpenURL { AppRuntime.handle($0) }
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
+        .handlesExternalEvents(matching: [])
         .windowResizability(.contentMinSize)
         .defaultSize(width: 960, height: 600)
         .windowStyle(.hiddenTitleBar)
