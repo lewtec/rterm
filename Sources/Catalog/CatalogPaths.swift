@@ -23,6 +23,4 @@ enum CatalogPaths {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("rterm", isDirectory: true)
     }
-
-    static var spotlightDirectory: URL { placesDirectory }
 }

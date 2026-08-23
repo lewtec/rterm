@@ -174,7 +174,7 @@ On first launch, migrate `~/Library/Application Support/rterm/places.toml` into 
 
 Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`.
 
-Do not use `~/.config`. Do not use `UserDefaults` as the store. Documents is the store so Spotlight can open the files.
+Do not use `~/.config`. Do not use `UserDefaults` as the store.
 
 ## Stack
 

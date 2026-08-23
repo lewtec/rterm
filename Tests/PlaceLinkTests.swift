@@ -77,7 +77,7 @@ final class PendingPlaceTests: XCTestCase {
 }
 
 @MainActor
-final class AppStoreSpotlightTests: XCTestCase {
+final class AppStoreOpenTests: XCTestCase {
     func testConsumePendingPlaceSelectsMatchingPlace() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
