@@ -39,4 +39,35 @@ final class CatalogIOTests: XCTestCase {
         try io.save(CatalogDocument(version: 1, places: places))
         XCTAssertEqual(try io.load().places.map(\.switchKey), places.map(\.switchKey))
     }
+
+    func testSaveRenumbersPrefixesAfterReorder() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("places", isDirectory: true)
+        let first = Place(user: "ada", host: "whiterun", backend: .herdr)
+        let second = Place(user: "ada", host: "riverwood", backend: .tmux, session: "foo")
+        let third = Place(user: "ada", host: "riften", backend: .herdr)
+        let io = CatalogIO(directoryURL: directory)
+        try io.save(CatalogDocument(version: 1, places: [first, second, third]))
+        try io.save(CatalogDocument(version: 1, places: [second, third, first]))
+        XCTAssertEqual(placeFileNames(in: directory), [
+            PlaceFile.name(index: 0, place: second),
+            PlaceFile.name(index: 1, place: third),
+            PlaceFile.name(index: 2, place: first),
+        ])
+        XCTAssertEqual(
+            try io.load().places.map(\.switchKey),
+            [second, third, first].map(\.switchKey)
+        )
+    }
+
+    private func placeFileNames(in directory: URL) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )) ?? [])
+            .filter { $0.pathExtension == PlaceFile.pathExtension }
+            .map(\.lastPathComponent)
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
 }

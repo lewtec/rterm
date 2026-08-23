@@ -66,6 +66,7 @@ struct RootView: View {
 private struct CatalogChrome: View {
     @Environment(AppStore.self) private var store
     @EnvironmentObject private var chrome: WindowChrome
+    @State private var dropTargetID: UUID?
 
     var body: some View {
         if chrome.splitActive {
@@ -145,6 +146,21 @@ private struct CatalogChrome: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .overlay {
+                        if dropTargetID == place.id {
+                            Capsule().strokeBorder(Color.accentColor, lineWidth: 2)
+                        }
+                    }
+                    .draggable(place.id.uuidString)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let raw = items.first, let id = UUID(uuidString: raw) else {
+                            return false
+                        }
+                        store.movePlace(id, onto: place.id)
+                        return true
+                    } isTargeted: { hovering in
+                        dropTargetID = hovering ? place.id : nil
+                    }
                     .contextMenu {
                         Button("Reconnect") {
                             store.reconnect(place.id)
