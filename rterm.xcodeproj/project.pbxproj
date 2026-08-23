@@ -32,6 +32,7 @@
 		5F9E1CFBB755E7A2A788B988 /* NotchTabPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */; };
 		616F93614CA762AEFA57245A /* PlaceEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */; };
 		665859CC001E3CE493BBA2FE /* ConnectProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8C817214FD3510425D4E59F /* ConnectProgressTests.swift */; };
+		718285184E6FF9E805DA3DA6 /* PlaceTabHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C238B5B6D20020DFBC718E8D /* PlaceTabHandle.swift */; };
 		84D1F3A5A60BA23E637E2D28 /* PasteHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5479692B2FEAE4A11431F005 /* PasteHUD.swift */; };
 		8584BD7BB2BB7D26CF66FAC2 /* PlaceAttach.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF5E743D73142180BDA5114 /* PlaceAttach.swift */; };
 		8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D918CE205CCF37284CC57 /* AppStore.swift */; };
@@ -106,6 +107,7 @@
 		C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchTabPackTests.swift; sourceTree = "<group>"; };
 		C10D918CE205CCF37284CC57 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		C1E7FE359E5B5E025126A73C /* CatalogCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCodecTests.swift; sourceTree = "<group>"; };
+		C238B5B6D20020DFBC718E8D /* PlaceTabHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceTabHandle.swift; sourceTree = "<group>"; };
 		CC76B234C5AF31607E6D3B98 /* SSHConnectTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectTrace.swift; sourceTree = "<group>"; };
 		CE03EF4B8DC774F5795F778D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		DD81C22ABE50E5253868F49A /* SSHConnectTraceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectTraceTests.swift; sourceTree = "<group>"; };
@@ -214,6 +216,7 @@
 				293B4512E2D954AD33BEBD6C /* NotchTabPack.swift */,
 				5479692B2FEAE4A11431F005 /* PasteHUD.swift */,
 				72A940FDBD827A5AAAB86BA6 /* PlaceEditorSheet.swift */,
+				C238B5B6D20020DFBC718E8D /* PlaceTabHandle.swift */,
 				CE03EF4B8DC774F5795F778D /* RootView.swift */,
 				302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */,
 			);
@@ -381,6 +384,7 @@
 				2C70E0323C49E302087DF223 /* PlaceIntents.swift in Sources */,
 				F59318F3CF597FD582765AD0 /* PlaceLink.swift in Sources */,
 				FBC09C308AEC8730366199F1 /* PlaceSpotlight.swift in Sources */,
+				718285184E6FF9E805DA3DA6 /* PlaceTabHandle.swift in Sources */,
 				55D505910E4B25A0651B2F49 /* RootView.swift in Sources */,
 				B59A5FC09D0E9E5289576DB7 /* RtermApp.swift in Sources */,
 				0315994EFFACF2070234E7E4 /* SSHConnectTrace.swift in Sources */,
