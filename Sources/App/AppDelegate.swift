@@ -9,6 +9,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        Task { @MainActor in
+            AppRuntime.revealMainWindow()
+        }
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         PlaceLink.claimHandler()
     }
