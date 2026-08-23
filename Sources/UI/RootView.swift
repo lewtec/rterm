@@ -23,9 +23,6 @@ struct RootView: View {
         .onChange(of: store.selectedID) { _, _ in
             chrome.focusTerminalIfKey()
         }
-        .onChange(of: store.places, initial: true) { _, _ in
-            PlaceSpotlight.publish()
-        }
         .onAppear {
             store.consumePendingPlace()
         }
