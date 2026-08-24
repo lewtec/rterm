@@ -221,10 +221,11 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var pasteGeneration = 0
     private var keyMonitor: Any?
     private var metalFrameWork: DispatchWorkItem?
-    private var cursorBlinkTimer: Timer?
     private var windowObservers: [NSObjectProtocol] = []
     private var pendingKeyEcho = false
+    private var needsPresent = false
     private var lastPaintedCursor: (x: Int, y: Int)?
+    private var hostCursorHidden = false
 
     override func paste(_ sender: Any) {
         if startImagePaste(gesture: .commandV) {
@@ -355,17 +356,22 @@ final class FillTerminalView: LocalProcessTerminalView {
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
-        if !isLive {
-            terminal.feed(buffer: slice)
-        } else if isUsingMetalRenderer {
-            terminal.feed(buffer: slice)
-            if !terminal.synchronizedOutputActive {
+        if isUsingMetalRenderer {
+            runWithHostCursor {
+                terminal.feed(buffer: slice)
+                guard isLive, !terminal.synchronizedOutputActive else {
+                    return
+                }
+                updateCursorPosition()
+                needsPresent = true
                 if pendingKeyEcho {
                     presentMetalFrame(force: true)
                 } else {
                     enqueueMetalFrame()
                 }
             }
+        } else if !isLive {
+            terminal.feed(buffer: slice)
         } else {
             super.dataReceived(slice: slice)
         }
@@ -391,8 +397,11 @@ final class FillTerminalView: LocalProcessTerminalView {
         detachWindowObservers()
         metalFrameWork?.cancel()
         metalFrameWork = nil
-        setCursorBlinkRunning(false)
+        needsPresent = false
         pauseMetalDisplay()
+        terminal.cursorHidden = hostCursorHidden
+        caretView?.disableAnimations()
+        caretView?.isHidden = true
     }
 
     private func presentMetalFrame(force: Bool = false) {
@@ -404,18 +413,31 @@ final class FillTerminalView: LocalProcessTerminalView {
         }
         let cursor = terminal.getCursorLocation()
         let cursorUnchanged = lastPaintedCursor.map { $0 == cursor } ?? false
-        if !force, terminal.getUpdateRange() == nil, cursorUnchanged {
+        if !force, !needsPresent, terminal.getUpdateRange() == nil, cursorUnchanged {
             return
         }
-        if let (startY, endY) = terminal.getScrollInvariantUpdateRange(), startY <= endY {
-            metalDirtyRange = startY...endY
-        } else {
-            metalDirtyRange = nil
+        assignMetalDirtyRange()
+        drawMetalWithoutCursor(metalKitView)
+        // SwiftTerm consumes metalDirtyRange only after it accepts the frame.
+        // A refused draw (GPU still busy) leaves it set; keep the terminal dirty
+        // so setNeedsDisplay can present that same range.
+        guard metalDirtyRange == nil else {
+            return
         }
-        metalKitView.draw()
         terminal.clearUpdateRange()
         lastPaintedCursor = cursor
         pendingKeyEcho = false
+        needsPresent = false
+    }
+
+    /// Always a concrete range so a refused `draw()` is detectable: the
+    /// renderer nils `metalDirtyRange` only after it accepts the frame.
+    private func assignMetalDirtyRange() {
+        if let (startY, endY) = terminal.getScrollInvariantUpdateRange(), startY <= endY {
+            metalDirtyRange = startY...endY
+        } else {
+            metalDirtyRange = 0...max(0, terminal.rows - 1)
+        }
     }
 
     private func enqueueMetalFrame() {
@@ -426,9 +448,6 @@ final class FillTerminalView: LocalProcessTerminalView {
             guard let self else { return }
             self.metalFrameWork = nil
             self.presentMetalFrame()
-            if self.terminal.getUpdateRange() != nil {
-                self.enqueueMetalFrame()
-            }
         }
         metalFrameWork = work
         DispatchQueue.main.async(execute: work)
@@ -446,18 +465,6 @@ final class FillTerminalView: LocalProcessTerminalView {
         window?.occlusionState.contains(.visible) == true
     }
 
-    private var wantsCursorBlink: Bool {
-        guard isLive, window?.isKeyWindow == true else {
-            return false
-        }
-        switch terminal.options.cursorStyle {
-        case .blinkBlock, .blinkUnderline, .blinkBar:
-            return true
-        case .steadyBlock, .steadyUnderline, .steadyBar:
-            return false
-        }
-    }
-
     private func syncRenderState(paint: Bool = false) {
         if isLive {
             enableMetalIfNeeded()
@@ -470,7 +477,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             metalFrameWork = nil
             pauseMetalDisplay()
         }
-        setCursorBlinkRunning(wantsCursorBlink)
+        syncCaretLayer()
     }
 
     private func attachWindowObservers() {
@@ -510,39 +517,48 @@ final class FillTerminalView: LocalProcessTerminalView {
         windowObservers = []
     }
 
-    private func setCursorBlinkRunning(_ running: Bool) {
-        if running {
-            guard cursorBlinkTimer == nil else {
-                return
-            }
-            let timer = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in
-                self?.presentCursorFrame()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            cursorBlinkTimer = timer
-        } else if cursorBlinkTimer != nil {
-            cursorBlinkTimer?.invalidate()
-            cursorBlinkTimer = nil
+    /// CaretView sits above Metal and blinks via a Core Animation opacity
+    /// loop. The emulator cursor stays hidden from Metal so GPU frames and
+    /// `setNeedsDisplay` retries never bake a second cursor or start SwiftTerm's
+    /// 0.7s redraw timer.
+    private func runWithHostCursor(_ body: () -> Void) {
+        terminal.cursorHidden = hostCursorHidden
+        body()
+        hostCursorHidden = terminal.cursorHidden
+        if isUsingMetalRenderer {
+            terminal.cursorHidden = true
         }
     }
 
-    private func presentCursorFrame() {
-        guard wantsCursorBlink, let metalKitView else {
+    private func drawMetalWithoutCursor(_ view: MTKView) {
+        let hidden = terminal.cursorHidden
+        terminal.cursorHidden = true
+        view.draw()
+        terminal.cursorHidden = hidden
+    }
+
+    private func syncCaretLayer() {
+        guard let caretView else {
             return
         }
-        if terminal.synchronizedOutputActive {
-            return
+        if isLive {
+            caretView.isHidden = false
+            runWithHostCursor {
+                updateCursorPosition()
+                caretView.updateCursorStyle()
+            }
+        } else {
+            caretView.disableAnimations()
+            caretView.isHidden = true
         }
-        metalDirtyRange = nil
-        metalKitView.draw()
     }
 
     private func pauseMetalDisplay() {
         guard let metalKitView else {
             return
         }
-        metalKitView.enableSetNeedsDisplay = false
         metalKitView.isPaused = true
+        metalKitView.enableSetNeedsDisplay = true
     }
 
     private func enableMetalIfNeeded() {
@@ -550,6 +566,11 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         try? setUseMetal(true)
+        guard isUsingMetalRenderer else {
+            return
+        }
+        hostCursorHidden = terminal.cursorHidden
+        terminal.cursorHidden = true
     }
 
     private func installKeyMonitor() {
