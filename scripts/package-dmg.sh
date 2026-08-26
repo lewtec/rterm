@@ -17,7 +17,7 @@ if [[ -z "$version" ]]; then
   exit 1
 fi
 
-derived="$root/build/DerivedData"
+derived="$root/build/DerivedData.noindex"
 stage="$root/build/dmg"
 artifacts="$root/artifacts"
 app_name="rterm"

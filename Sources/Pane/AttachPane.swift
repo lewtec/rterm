@@ -1,5 +1,6 @@
 import AppKit
 import MetalKit
+import QuartzCore
 @testable import SwiftTerm
 import SwiftUI
 
@@ -225,7 +226,6 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var pendingKeyEcho = false
     private var needsPresent = false
     private var lastPaintedCursor: (x: Int, y: Int)?
-    private var hostCursorHidden = false
 
     override func paste(_ sender: Any) {
         if startImagePaste(gesture: .commandV) {
@@ -357,12 +357,9 @@ final class FillTerminalView: LocalProcessTerminalView {
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         if isUsingMetalRenderer {
-            runWithHostCursor {
-                terminal.feed(buffer: slice)
-                guard isLive, !terminal.synchronizedOutputActive else {
-                    return
-                }
-                updateCursorPosition()
+            terminal.feed(buffer: slice)
+            if isLive, !terminal.synchronizedOutputActive {
+                moveOverlayCaret()
                 needsPresent = true
                 if pendingKeyEcho {
                     presentMetalFrame(force: true)
@@ -399,7 +396,6 @@ final class FillTerminalView: LocalProcessTerminalView {
         metalFrameWork = nil
         needsPresent = false
         pauseMetalDisplay()
-        terminal.cursorHidden = hostCursorHidden
         caretView?.disableAnimations()
         caretView?.isHidden = true
     }
@@ -413,15 +409,15 @@ final class FillTerminalView: LocalProcessTerminalView {
         }
         let cursor = terminal.getCursorLocation()
         let cursorUnchanged = lastPaintedCursor.map { $0 == cursor } ?? false
-        if !force, !needsPresent, terminal.getUpdateRange() == nil, cursorUnchanged {
+        if !force, metalDirtyRange == nil, !needsPresent, terminal.getUpdateRange() == nil, cursorUnchanged {
             return
         }
         assignMetalDirtyRange()
         drawMetalWithoutCursor(metalKitView)
         // SwiftTerm consumes metalDirtyRange only after it accepts the frame.
-        // A refused draw (GPU still busy) leaves it set; keep the terminal dirty
-        // so setNeedsDisplay can present that same range.
+        // A refused draw (GPU still busy) leaves it set; retry on the next turn.
         guard metalDirtyRange == nil else {
+            enqueueMetalFrame()
             return
         }
         terminal.clearUpdateRange()
@@ -517,19 +513,26 @@ final class FillTerminalView: LocalProcessTerminalView {
         windowObservers = []
     }
 
-    /// CaretView sits above Metal and blinks via a Core Animation opacity
-    /// loop. The emulator cursor stays hidden from Metal so GPU frames and
-    /// `setNeedsDisplay` retries never bake a second cursor or start SwiftTerm's
-    /// 0.7s redraw timer.
-    private func runWithHostCursor(_ body: () -> Void) {
-        terminal.cursorHidden = hostCursorHidden
-        body()
-        hostCursorHidden = terminal.cursorHidden
+    override func showCursor(source: Terminal) {
         if isUsingMetalRenderer {
-            terminal.cursorHidden = true
+            return
         }
+        super.showCursor(source: source)
     }
 
+    override func hideCursor(source: Terminal) {
+        if isUsingMetalRenderer {
+            return
+        }
+        super.hideCursor(source: source)
+    }
+
+    override func cursorStyleChanged(source: Terminal, newStyle: CursorStyle) {
+        super.cursorStyleChanged(source: source, newStyle: Self.steadyCursorStyle(newStyle))
+    }
+
+    /// Hide the emulator caret only for this GPU pass so Metal does not
+    /// paint a second cursor or start SwiftTerm's 0.7s redraw timer.
     private func drawMetalWithoutCursor(_ view: MTKView) {
         let hidden = terminal.cursorHidden
         terminal.cursorHidden = true
@@ -542,15 +545,55 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         if isLive {
-            caretView.isHidden = false
-            runWithHostCursor {
-                updateCursorPosition()
-                caretView.updateCursorStyle()
-            }
+            moveOverlayCaret()
         } else {
             caretView.disableAnimations()
             caretView.isHidden = true
         }
+    }
+
+    /// Keep the overlay caret in the tree using the host hide flag. A standing
+    /// `cursorHidden = true` (for Metal) makes `updateCursorPosition` remove
+    /// the view, which restarts the blink every PTY chunk.
+    private func moveOverlayCaret() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        updateCursorPosition()
+        CATransaction.commit()
+        guard let caretView else {
+            return
+        }
+        caretView.isHidden = terminal.cursorHidden
+        freezeOverlayCaret()
+    }
+
+    private static func steadyCursorStyle(_ style: CursorStyle) -> CursorStyle {
+        switch style {
+        case .blinkBlock: return .steadyBlock
+        case .blinkUnderline: return .steadyUnderline
+        case .blinkBar: return .steadyBar
+        case .steadyBlock, .steadyUnderline, .steadyBar: return style
+        }
+    }
+
+    /// Solid caret. SwiftTerm's blink fade restarts on every style/focus
+    /// update and reads as flicker.
+    private func freezeOverlayCaret() {
+        guard let caretView else {
+            return
+        }
+        switch caretView.style {
+        case .blinkBlock:
+            caretView.style = .steadyBlock
+        case .blinkUnderline:
+            caretView.style = .steadyUnderline
+        case .blinkBar:
+            caretView.style = .steadyBar
+        case .steadyBlock, .steadyUnderline, .steadyBar:
+            break
+        }
+        caretView.disableAnimations()
+        caretView.layer?.opacity = 1
     }
 
     private func pauseMetalDisplay() {
@@ -558,7 +601,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         metalKitView.isPaused = true
-        metalKitView.enableSetNeedsDisplay = true
+        metalKitView.enableSetNeedsDisplay = false
     }
 
     private func enableMetalIfNeeded() {
@@ -566,11 +609,6 @@ final class FillTerminalView: LocalProcessTerminalView {
             return
         }
         try? setUseMetal(true)
-        guard isUsingMetalRenderer else {
-            return
-        }
-        hostCursorHidden = terminal.cursorHidden
-        terminal.cursorHidden = true
     }
 
     private func installKeyMonitor() {
