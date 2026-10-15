@@ -1,6 +1,6 @@
 [tools]
 xcodegen = "2.46.0"
-goreleaser = "2.17.1"
+goreleaser = "2.18.3"
 svu = "3.3.0"
 
 [tasks.generate]
