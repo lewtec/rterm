@@ -1,7 +1,7 @@
 [tools]
 xcodegen = "2.46.0"
 goreleaser = "2.18.3"
-svu = "3.3.0"
+svu = "3.4.1"
 
 [tasks.generate]
 description = "Regenerate rterm.xcodeproj from project.yml"
