@@ -226,6 +226,7 @@ final class FillTerminalView: LocalProcessTerminalView {
     private var pendingKeyEcho = false
     private var needsPresent = false
     private var lastPaintedCursor: (x: Int, y: Int)?
+    private var paintedLines: [Int: LineStamp] = [:]
 
     override func paste(_ sender: Any) {
         if startImagePaste(gesture: .commandV) {
@@ -395,12 +396,13 @@ final class FillTerminalView: LocalProcessTerminalView {
         metalFrameWork?.cancel()
         metalFrameWork = nil
         needsPresent = false
+        paintedLines = [:]
         pauseMetalDisplay()
         caretView?.disableAnimations()
         caretView?.isHidden = true
     }
 
-    private func presentMetalFrame(force: Bool = false) {
+    private func presentMetalFrame(force: Bool = false, paintAll: Bool = false) {
         guard isLive, let metalKitView else {
             return
         }
@@ -412,7 +414,14 @@ final class FillTerminalView: LocalProcessTerminalView {
         if !force, metalDirtyRange == nil, !needsPresent, terminal.getUpdateRange() == nil, cursorUnchanged {
             return
         }
-        assignMetalDirtyRange()
+        guard let span = metalSpan(paintAll: paintAll) else {
+            terminal.clearUpdateRange()
+            lastPaintedCursor = cursor
+            pendingKeyEcho = false
+            needsPresent = false
+            return
+        }
+        metalDirtyRange = span
         drawMetalWithoutCursor(metalKitView)
         // SwiftTerm consumes metalDirtyRange only after it accepts the frame.
         // A refused draw (GPU still busy) leaves it set; retry on the next turn.
@@ -424,16 +433,55 @@ final class FillTerminalView: LocalProcessTerminalView {
         lastPaintedCursor = cursor
         pendingKeyEcho = false
         needsPresent = false
+        rememberPaintedLines()
     }
 
-    /// Always a concrete range so a refused `draw()` is detectable: the
-    /// renderer nils `metalDirtyRange` only after it accepts the frame.
-    private func assignMetalDirtyRange() {
-        if let (startY, endY) = terminal.getScrollInvariantUpdateRange(), startY <= endY {
-            metalDirtyRange = startY...endY
-        } else {
-            metalDirtyRange = 0...max(0, terminal.rows - 1)
+    /// Nil means do not draw. Viewport rows start at `yDisp`. A full-width
+    /// scroll records only the viewport range, so that case uses the visible span.
+    private func metalSpan(paintAll: Bool) -> ClosedRange<Int>? {
+        let pending = metalDirtyRange
+        if paintAll {
+            terminal.updateFullScreen()
         }
+        let invariant = terminal.getScrollInvariantUpdateRange()
+        let viewport = terminal.getUpdateRange()
+        let invariantValid = invariant.map { $0.startY <= $0.endY } ?? false
+        let viewportChanged = viewport.map { $0.startY <= $0.endY } ?? false
+        let forcedFull: ClosedRange<Int>? = invariantValid || !(paintAll || viewportChanged)
+            ? nil
+            : visibleRowSpan(top: terminal.getTopVisibleRow(), rows: terminal.rows)
+        return metalRowSpan(
+            updateStart: invariant?.startY,
+            updateEnd: invariant?.endY,
+            forcedFull: forcedFull,
+            pending: pending,
+            painted: paintedLines,
+            current: lineStamp(at:),
+            narrow: !paintAll
+        )
+    }
+
+    private func lineStamp(at row: Int) -> LineStamp? {
+        let screenRow = row - terminal.getTopVisibleRow()
+        guard let line = terminal.getLine(row: screenRow) else {
+            return nil
+        }
+        return LineStamp(identity: ObjectIdentifier(line), generation: line.generation)
+    }
+
+    private func rememberPaintedLines() {
+        let top = terminal.getTopVisibleRow()
+        guard let span = visibleRowSpan(top: top, rows: terminal.rows) else {
+            paintedLines = [:]
+            return
+        }
+        var next: [Int: LineStamp] = [:]
+        for row in span {
+            if let stamp = lineStamp(at: row) {
+                next[row] = stamp
+            }
+        }
+        paintedLines = next
     }
 
     private func enqueueMetalFrame() {
@@ -466,7 +514,7 @@ final class FillTerminalView: LocalProcessTerminalView {
             enableMetalIfNeeded()
             pauseMetalDisplay()
             if paint {
-                presentMetalFrame(force: true)
+                presentMetalFrame(force: true, paintAll: true)
             }
         } else {
             metalFrameWork?.cancel()
