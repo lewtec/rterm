@@ -1,7 +1,6 @@
 import AppKit
-import MetalKit
-import QuartzCore
-@testable import SwiftTerm
+import os
+import SwiftTerm
 import SwiftUI
 
 struct AttachPane: View {
@@ -71,6 +70,7 @@ private struct AttachTerminal: NSViewRepresentable {
             context.coordinator.stopWatch()
             progress.finish()
         }
+        view.armTTYAnnouncement()
         view.startProcess(
             executable: launch.executable,
             args: launch.arguments,
@@ -105,7 +105,8 @@ private struct AttachTerminal: NSViewRepresentable {
         coordinator.stopWatch()
         nsView.cancelImagePaste()
         nsView.onPasteHUD = nil
-        nsView.teardownRender()
+        nsView.onTTYOutput = nil
+        nsView.disarmTTYAnnouncement()
         nsView.terminate()
     }
 
@@ -209,24 +210,49 @@ private struct AttachTerminal: NSViewRepresentable {
             stopWatch()
             onExit(exitCode)
         }
+
+        func processFailedToStart(source: TerminalView, error _: LocalProcessError) {
+            stopWatch()
+            onExit(1)
+        }
     }
 }
 
-/// Overlay scrollers still reserve a legacy gutter, which shows up as a black
-/// strip. Hide that gutter so the cell grid can use the full view.
+/// First process-output batch. `note` runs on the parse thread and hops
+/// the callback to the main thread.
+private final class FirstOutput: Sendable {
+    private let state = OSAllocatedUnfairLock<(@MainActor () -> Void)?>(initialState: nil)
+
+    func arm(_ body: @escaping @MainActor () -> Void) {
+        state.withLock { $0 = body }
+    }
+
+    func disarm() {
+        state.withLock { $0 = nil }
+    }
+
+    func note() {
+        let body = state.withLock { stored -> (@MainActor () -> Void)? in
+            let body = stored
+            stored = nil
+            return body
+        }
+        guard let body else {
+            return
+        }
+        Task { @MainActor in
+            body()
+        }
+    }
+}
+
 final class FillTerminalView: LocalProcessTerminalView {
     var onTTYOutput: (() -> Void)?
     var onPasteHUD: ((PasteHUD?) -> Void)?
     var place = Place(user: "", host: "", backend: .herdr)
-    private var announcedTTY = false
+    private let firstOutput = FirstOutput()
     private var pasteGeneration = 0
     private var keyMonitor: Any?
-    private var metalFrameWork: DispatchWorkItem?
-    private var windowObservers: [NSObjectProtocol] = []
-    private var pendingKeyEcho = false
-    private var needsPresent = false
-    private var lastPaintedCursor: (x: Int, y: Int)?
-    private var paintedLines: [Int: LineStamp] = [:]
 
     override func paste(_ sender: Any) {
         if startImagePaste(gesture: .commandV) {
@@ -299,7 +325,7 @@ final class FillTerminalView: LocalProcessTerminalView {
         switch result {
         case .success(let path):
             onPasteHUD?(nil)
-            pastePath(path)
+            pasteText(path)
         case .failure:
             NSSound.beep()
             onPasteHUD?(PasteHUD.failure)
@@ -317,343 +343,39 @@ final class FillTerminalView: LocalProcessTerminalView {
         }
     }
 
-    private func pastePath(_ path: String) {
-        if terminal.bracketedPasteMode {
-            send(data: Self.bracketedPasteStart[...])
-            send(txt: path)
-            send(data: Self.bracketedPasteEnd[...])
-        } else {
-            send(txt: path)
+    func refreshAfterReveal() {
+        enableMetalIfNeeded()
+        requestRedraw()
+    }
+
+    func armTTYAnnouncement() {
+        firstOutput.arm { [weak self] in
+            guard let self else { return }
+            self.setProcessOutputHandler(nil)
+            self.onTTYOutput?()
+        }
+        setProcessOutputHandler { [firstOutput] in
+            firstOutput.note()
         }
     }
 
-    private static let bracketedPasteStart: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e]
-    private static let bracketedPasteEnd: [UInt8] = [0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e]
-
-    override var isHidden: Bool {
-        didSet {
-            syncRenderState(paint: isLive)
-        }
+    func disarmTTYAnnouncement() {
+        setProcessOutputHandler(nil)
+        firstOutput.disarm()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        hideReservedScroller()
         if window == nil {
             removeKeyMonitor()
-            teardownRender()
         } else {
             installKeyMonitor()
-            attachWindowObservers()
-            syncRenderState(paint: isLive)
-        }
-    }
-
-    override func setNeedsDisplay(_ invalidRect: NSRect) {
-        if isUsingMetalRenderer || isHidden {
-            return
-        }
-        super.setNeedsDisplay(invalidRect)
-    }
-
-    override func dataReceived(slice: ArraySlice<UInt8>) {
-        if isUsingMetalRenderer {
-            terminal.feed(buffer: slice)
-            if isLive, !terminal.synchronizedOutputActive {
-                moveOverlayCaret()
-                needsPresent = true
-                if pendingKeyEcho {
-                    presentMetalFrame(force: true)
-                } else {
-                    enqueueMetalFrame()
-                }
-            }
-        } else if !isLive {
-            terminal.feed(buffer: slice)
-        } else {
-            super.dataReceived(slice: slice)
-        }
-        guard !announcedTTY, !slice.isEmpty else {
-            return
-        }
-        announcedTTY = true
-        onTTYOutput?()
-    }
-
-    func refreshAfterReveal() {
-        let hadMetal = isUsingMetalRenderer
-        if isLive {
             enableMetalIfNeeded()
-            if isUsingMetalRenderer, !hadMetal {
-                terminal.updateFullScreen()
-            }
         }
-        syncRenderState(paint: true)
-    }
-
-    func teardownRender() {
-        detachWindowObservers()
-        metalFrameWork?.cancel()
-        metalFrameWork = nil
-        needsPresent = false
-        paintedLines = [:]
-        pauseMetalDisplay()
-        caretView?.disableAnimations()
-        caretView?.isHidden = true
-    }
-
-    private func presentMetalFrame(force: Bool = false, paintAll: Bool = false) {
-        guard isLive, let metalKitView else {
-            return
-        }
-        if terminal.synchronizedOutputActive {
-            return
-        }
-        let cursor = terminal.getCursorLocation()
-        let cursorUnchanged = lastPaintedCursor.map { $0 == cursor } ?? false
-        if !force, metalDirtyRange == nil, !needsPresent, terminal.getUpdateRange() == nil, cursorUnchanged {
-            return
-        }
-        guard let span = metalSpan(paintAll: paintAll) else {
-            terminal.clearUpdateRange()
-            lastPaintedCursor = cursor
-            pendingKeyEcho = false
-            needsPresent = false
-            return
-        }
-        metalDirtyRange = span
-        drawMetalWithoutCursor(metalKitView)
-        // SwiftTerm consumes metalDirtyRange only after it accepts the frame.
-        // A refused draw (GPU still busy) leaves it set; retry on the next turn.
-        guard metalDirtyRange == nil else {
-            enqueueMetalFrame()
-            return
-        }
-        terminal.clearUpdateRange()
-        lastPaintedCursor = cursor
-        pendingKeyEcho = false
-        needsPresent = false
-        rememberPaintedLines()
-    }
-
-    /// Nil means do not draw. Viewport rows start at `yDisp`. A full-width
-    /// scroll records only the viewport range, so that case uses the visible span.
-    private func metalSpan(paintAll: Bool) -> ClosedRange<Int>? {
-        let pending = metalDirtyRange
-        if paintAll {
-            terminal.updateFullScreen()
-        }
-        let invariant = terminal.getScrollInvariantUpdateRange()
-        let viewport = terminal.getUpdateRange()
-        let invariantValid = invariant.map { $0.startY <= $0.endY } ?? false
-        let viewportChanged = viewport.map { $0.startY <= $0.endY } ?? false
-        let forcedFull: ClosedRange<Int>? = invariantValid || !(paintAll || viewportChanged)
-            ? nil
-            : visibleRowSpan(top: terminal.getTopVisibleRow(), rows: terminal.rows)
-        return metalRowSpan(
-            updateStart: invariant?.startY,
-            updateEnd: invariant?.endY,
-            forcedFull: forcedFull,
-            pending: pending,
-            painted: paintedLines,
-            current: lineStamp(at:),
-            narrow: !paintAll
-        )
-    }
-
-    private func lineStamp(at row: Int) -> LineStamp? {
-        let screenRow = row - terminal.getTopVisibleRow()
-        guard let line = terminal.getLine(row: screenRow) else {
-            return nil
-        }
-        return LineStamp(identity: ObjectIdentifier(line), generation: line.generation)
-    }
-
-    private func rememberPaintedLines() {
-        let top = terminal.getTopVisibleRow()
-        guard let span = visibleRowSpan(top: top, rows: terminal.rows) else {
-            paintedLines = [:]
-            return
-        }
-        var next: [Int: LineStamp] = [:]
-        for row in span {
-            if let stamp = lineStamp(at: row) {
-                next[row] = stamp
-            }
-        }
-        paintedLines = next
-    }
-
-    private func enqueueMetalFrame() {
-        guard metalFrameWork == nil else {
-            return
-        }
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.metalFrameWork = nil
-            self.presentMetalFrame()
-        }
-        metalFrameWork = work
-        DispatchQueue.main.async(execute: work)
-    }
-
-    private var metalKitView: MTKView? {
-        subviews.first { $0 is MTKView } as? MTKView
-    }
-
-    private var isLive: Bool {
-        !isHidden && window != nil && windowIsVisible
-    }
-
-    private var windowIsVisible: Bool {
-        window?.occlusionState.contains(.visible) == true
-    }
-
-    private func syncRenderState(paint: Bool = false) {
-        if isLive {
-            enableMetalIfNeeded()
-            pauseMetalDisplay()
-            if paint {
-                presentMetalFrame(force: true, paintAll: true)
-            }
-        } else {
-            metalFrameWork?.cancel()
-            metalFrameWork = nil
-            pauseMetalDisplay()
-        }
-        syncCaretLayer()
-    }
-
-    private func attachWindowObservers() {
-        detachWindowObservers()
-        guard let window else {
-            return
-        }
-        let center = NotificationCenter.default
-        let occlusion = center.addObserver(
-            forName: NSWindow.didChangeOcclusionStateNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            self?.syncRenderState(paint: true)
-        }
-        let becomeKey = center.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            self?.syncRenderState()
-        }
-        let resignKey = center.addObserver(
-            forName: NSWindow.didResignKeyNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            self?.syncRenderState()
-        }
-        windowObservers = [occlusion, becomeKey, resignKey]
-    }
-
-    private func detachWindowObservers() {
-        for observer in windowObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        windowObservers = []
-    }
-
-    override func showCursor(source: Terminal) {
-        if isUsingMetalRenderer {
-            return
-        }
-        super.showCursor(source: source)
-    }
-
-    override func hideCursor(source: Terminal) {
-        if isUsingMetalRenderer {
-            return
-        }
-        super.hideCursor(source: source)
-    }
-
-    override func cursorStyleChanged(source: Terminal, newStyle: CursorStyle) {
-        super.cursorStyleChanged(source: source, newStyle: Self.steadyCursorStyle(newStyle))
-    }
-
-    /// Hide the emulator caret only for this GPU pass so Metal does not
-    /// paint a second cursor or start SwiftTerm's 0.7s redraw timer.
-    private func drawMetalWithoutCursor(_ view: MTKView) {
-        let hidden = terminal.cursorHidden
-        terminal.cursorHidden = true
-        view.draw()
-        terminal.cursorHidden = hidden
-    }
-
-    private func syncCaretLayer() {
-        guard let caretView else {
-            return
-        }
-        if isLive {
-            moveOverlayCaret()
-        } else {
-            caretView.disableAnimations()
-            caretView.isHidden = true
-        }
-    }
-
-    /// Keep the overlay caret in the tree using the host hide flag. A standing
-    /// `cursorHidden = true` (for Metal) makes `updateCursorPosition` remove
-    /// the view, which restarts the blink every PTY chunk.
-    private func moveOverlayCaret() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        updateCursorPosition()
-        CATransaction.commit()
-        guard let caretView else {
-            return
-        }
-        caretView.isHidden = terminal.cursorHidden
-        freezeOverlayCaret()
-    }
-
-    private static func steadyCursorStyle(_ style: CursorStyle) -> CursorStyle {
-        switch style {
-        case .blinkBlock: return .steadyBlock
-        case .blinkUnderline: return .steadyUnderline
-        case .blinkBar: return .steadyBar
-        case .steadyBlock, .steadyUnderline, .steadyBar: return style
-        }
-    }
-
-    /// Solid caret. SwiftTerm's blink fade restarts on every style/focus
-    /// update and reads as flicker.
-    private func freezeOverlayCaret() {
-        guard let caretView else {
-            return
-        }
-        switch caretView.style {
-        case .blinkBlock:
-            caretView.style = .steadyBlock
-        case .blinkUnderline:
-            caretView.style = .steadyUnderline
-        case .blinkBar:
-            caretView.style = .steadyBar
-        case .steadyBlock, .steadyUnderline, .steadyBar:
-            break
-        }
-        caretView.disableAnimations()
-        caretView.layer?.opacity = 1
-    }
-
-    private func pauseMetalDisplay() {
-        guard let metalKitView else {
-            return
-        }
-        metalKitView.isPaused = true
-        metalKitView.enableSetNeedsDisplay = false
     }
 
     private func enableMetalIfNeeded() {
-        guard !isUsingMetalRenderer else {
+        guard window != nil, !isUsingMetalRenderer else {
             return
         }
         try? setUseMetal(true)
@@ -667,7 +389,6 @@ final class FillTerminalView: LocalProcessTerminalView {
             guard let self, self.window?.firstResponder === self else {
                 return event
             }
-            self.pendingKeyEcho = true
             if ImagePaste.isControlV(event), self.startImagePaste(gesture: .controlV) {
                 return nil
             }
@@ -679,21 +400,6 @@ final class FillTerminalView: LocalProcessTerminalView {
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
-        }
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        hideReservedScroller()
-        guard newSize != frame.size else {
-            return
-        }
-        super.setFrameSize(newSize)
-        syncRenderState(paint: true)
-    }
-
-    private func hideReservedScroller() {
-        for subview in subviews where subview is NSScroller && !subview.isHidden {
-            subview.isHidden = true
         }
     }
 }

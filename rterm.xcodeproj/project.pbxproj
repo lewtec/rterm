@@ -21,7 +21,6 @@
 		3A91F751A847A869F256348D /* PendingPlace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD57060ED4B2E010486DD68 /* PendingPlace.swift */; };
 		3AC9A88932D1F2245FA400BE /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 09CC7473527A224DBEF5778D /* SwiftTerm */; };
 		3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13FB0B0803CF923FEA81135A /* FailureOverlay.swift */; };
-		44A8293329FFBB20621F514E /* MetalRowSpanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A3E76C1E8A3EB85C2DDB94 /* MetalRowSpanTests.swift */; };
 		46A0E729A9E10FC645027BBC /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 302B62B0DD7A3AF2F366A1A3 /* WindowChrome.swift */; };
 		47EBBF51C6F8597193B1FD89 /* SSHConnectTraceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD81C22ABE50E5253868F49A /* SSHConnectTraceTests.swift */; };
 		4DF6D14C0276B63682AF32E5 /* TabState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 934A08F963745061B6816150 /* TabState.swift */; };
@@ -37,7 +36,6 @@
 		8CB4D175CD90D0D6F8B85B6F /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D918CE205CCF37284CC57 /* AppStore.swift */; };
 		90E55D7616C271F98D451669 /* CatalogIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD851CE8251960231DDA80C2 /* CatalogIO.swift */; };
 		9842710B9E569D008EC9F630 /* ConnectOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2C804E50828522F719F5F5 /* ConnectOverlay.swift */; };
-		99624A80C48FA7E32DF3DF69 /* MetalRowSpan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96EBA3D6F2FCFEC78C5AF328 /* MetalRowSpan.swift */; };
 		9C8BDC922D8E51C216FF2693 /* PlaceLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4447B66ACC4D382F07012C28 /* PlaceLinkTests.swift */; };
 		9E2F750DB2A1567F5EE56FF2 /* AppStoreSleepTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F228290586DF8D0BED89FA6 /* AppStoreSleepTests.swift */; };
 		A467407BAF610B5DD5623D9D /* PlaceAttachTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE4CF7FFC713D5C2A066427 /* PlaceAttachTests.swift */; };
@@ -96,7 +94,6 @@
 		88EF6513994246042D5109AE /* AttachPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachPane.swift; sourceTree = "<group>"; };
 		9336892250E82F5922D5962F /* Backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backend.swift; sourceTree = "<group>"; };
 		934A08F963745061B6816150 /* TabState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabState.swift; sourceTree = "<group>"; };
-		96EBA3D6F2FCFEC78C5AF328 /* MetalRowSpan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRowSpan.swift; sourceTree = "<group>"; };
 		9BF5E743D73142180BDA5114 /* PlaceAttach.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceAttach.swift; sourceTree = "<group>"; };
 		9CD57060ED4B2E010486DD68 /* PendingPlace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingPlace.swift; sourceTree = "<group>"; };
 		A368265D33196F318FE029EB /* AppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRuntime.swift; sourceTree = "<group>"; };
@@ -114,7 +111,6 @@
 		DD81C22ABE50E5253868F49A /* SSHConnectTraceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectTraceTests.swift; sourceTree = "<group>"; };
 		DE2785E8BD70205C99DDEF46 /* PlaceLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceLink.swift; sourceTree = "<group>"; };
 		F304BAF27B86FA24B0F6217A /* RtermApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RtermApp.swift; sourceTree = "<group>"; };
-		F5A3E76C1E8A3EB85C2DDB94 /* MetalRowSpanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRowSpanTests.swift; sourceTree = "<group>"; };
 		FD851CE8251960231DDA80C2 /* CatalogIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogIO.swift; sourceTree = "<group>"; };
 		FE0ADB6888AB30381DF3D61E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -145,7 +141,6 @@
 			isa = PBXGroup;
 			children = (
 				88EF6513994246042D5109AE /* AttachPane.swift */,
-				96EBA3D6F2FCFEC78C5AF328 /* MetalRowSpan.swift */,
 			);
 			path = Pane;
 			sourceTree = "<group>";
@@ -247,7 +242,6 @@
 				B8C817214FD3510425D4E59F /* ConnectProgressTests.swift */,
 				1EBB72640D125653205D9483 /* DriverTests.swift */,
 				30F910EB261883D838E755E7 /* ImagePasteTests.swift */,
-				F5A3E76C1E8A3EB85C2DDB94 /* MetalRowSpanTests.swift */,
 				C02996BCA65BF5504A20A570 /* NotchTabPackTests.swift */,
 				AAF0B9991E30C4BA7560A399 /* PasteHUDTests.swift */,
 				7AE4CF7FFC713D5C2A066427 /* PlaceAttachTests.swift */,
@@ -378,7 +372,6 @@
 				2CD525134E7D7307AD6AB8E5 /* Driver.swift in Sources */,
 				3FE5648480151DB8328E01A6 /* FailureOverlay.swift in Sources */,
 				FA4B0340D94C093B3EC1ED55 /* ImagePaste.swift in Sources */,
-				99624A80C48FA7E32DF3DF69 /* MetalRowSpan.swift in Sources */,
 				5F9E1CFBB755E7A2A788B988 /* NotchTabPack.swift in Sources */,
 				84D1F3A5A60BA23E637E2D28 /* PasteHUD.swift in Sources */,
 				3A91F751A847A869F256348D /* PendingPlace.swift in Sources */,
@@ -409,7 +402,6 @@
 				665859CC001E3CE493BBA2FE /* ConnectProgressTests.swift in Sources */,
 				1860C8A1ED7272D4E5718DB9 /* DriverTests.swift in Sources */,
 				E88E23005C60D24EF3FCB347 /* ImagePasteTests.swift in Sources */,
-				44A8293329FFBB20621F514E /* MetalRowSpanTests.swift in Sources */,
 				D69C2A0CD7B282AE61DCED26 /* NotchTabPackTests.swift in Sources */,
 				D1AB5110BC37889DF637EEA9 /* PasteHUDTests.swift in Sources */,
 				A467407BAF610B5DD5623D9D /* PlaceAttachTests.swift in Sources */,
@@ -681,7 +673,7 @@
 			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.20.0;
+				minimumVersion = 1.99.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
