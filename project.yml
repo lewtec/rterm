@@ -17,7 +17,7 @@ settings:
 packages:
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
-    from: 1.99.0
+    from: 1.99.1
 targets:
   rterm:
     type: application
