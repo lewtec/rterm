@@ -17,7 +17,7 @@ Use the approved term. Do not invent a synonym.
 | Field that selects herdr, tmux, or screen | backend | multiplexer type, kind |
 | Code that turns a place into an argv | driver | adapter, plugin |
 | Durable list of places | catalog | config (alone), database |
-| Visible SwiftTerm view | pane | terminal (alone), PTY view |
+| Visible terminal surface | pane | terminal (alone), PTY view |
 | Start or reuse the remote session | attach | connect (except user-facing "not connected"), reconnect as a separate verb |
 | User-visible name of a place | label | title, alias, nickname |
 | Centered icon and error on the pane | overlay | modal, sheet, alert (for mux/host failures) |
@@ -27,13 +27,13 @@ Attach is the only verb that starts a place. The menu item Reconnect runs attach
 
 ## Product
 
-rterm is a native Mac app. It supervises detachable remote sessions. It is not a general local-shell terminal.
+rterm is a desktop app for macOS and Linux. It supervises detachable remote sessions. It is not a general local-shell terminal.
 
-The remote session is the source of truth. The local SSH process is disposable.
+The remote session is the source of truth. The local process is disposable.
 
 Destinations must already run a detachable session tool: herdr, tmux, or screen.
 
-v1 is a Mac app. Linux, Windows, Iced, and winit ports are out of scope. You may sell a later Mac release. That release still follows these v1 rules until you change this file.
+v1 runs on macOS 14 and on Linux. Windows is out of scope. A later release still follows these rules until you change this file.
 
 ## Place
 
@@ -94,7 +94,7 @@ If backend is `herdr`, attach by running the **same binary as the running herdr 
 
 Do not use `herdr --remote`. SSH + a PATH `herdr` can be a different binary than the server (wrapper, old pin, other channel).
 
-If host is set and backend is `tmux` or `screen`, transport is SSH. Use `/usr/bin/ssh`. Do not use libssh.
+When the place names a host and the backend is `tmux` or `screen`, use SSH. Call `/usr/bin/ssh`. Do not use libssh.
 
 Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so the remote `PATH` is the user's login `PATH`:
 
@@ -126,13 +126,13 @@ If the herdr, tmux, or screen binary is missing on the host, attach fails. Do no
 
 ## Prompts and failures
 
-The pane is always a SwiftTerm surface.
+The pane is the terminal surface for the attached process.
 
 SSH prompts (password, host key, OTP) stay as bytes in the pane. Do not wrap `SSH_ASKPASS`. Do not put those prompts in a Mac sheet.
 
 ssh-agent, keys, and Touch ID stay outside rterm.
 
-rterm classifies some failures: host unreachable, mux binary missing, or a non-zero exit that is not a clean detach. On those failures, keep the last pane frame. Draw an overlay on it: centered icon and the error text. Click or Reconnect runs attach again.
+rterm classifies some failures: host unreachable, mux binary missing, or a non-zero exit that is not a clean detach. On those failures, hide the pane. Draw an overlay: the error text and "Click to attach again". Click or Reconnect runs attach again.
 
 ## Image paste
 
@@ -142,13 +142,14 @@ Use the clipboard only when it has image data and no text. A copy that has both 
 
 | Gesture | Local place | Remote place |
 | --- | --- | --- |
-| ⌘V, image only | write `/tmp/rterm-paste-<id>.png` on this Mac and paste that path | upload the same path on the host, then paste it |
+| ⌘V, image only | write `/tmp/rterm-paste-<id>.png` on this machine and paste that path | upload that path on the host, then paste it |
+| ⌘V, text present | paste the text into the process | paste the text into the process |
 | Ctrl+V, image only | send Ctrl+V to the process | same upload and path as ⌘V |
-| any gesture, text present | paste text | paste text |
+| Ctrl+V, text present | send Ctrl+V to the process | send Ctrl+V to the process |
 
 Each paste uses a new UUIDv7 `<id>`. Cap the PNG at 10 MiB. A larger image or a failed write beeps. Do not paste a truncated file.
 
-While write or upload runs, show a corner overlay on the pane: spinner, Writing image… or Uploading image…, and a bar for bytes written so far (local file or ssh stdin). On failure, keep the beep and show Paste failed for 1.5 seconds. The overlay must not steal clicks. Do not draw the image.
+While write or upload runs, show a corner overlay on the pane. Show a spinner, Writing image… or Uploading image…, and a bar for bytes written. The bar counts the local file or ssh stdin. On failure, keep the beep and show Paste failed for 1.5 seconds. The overlay must not steal clicks. Do not draw the image.
 
 Remote upload uses a second `/usr/bin/ssh` on the attach ControlPath:
 
@@ -180,13 +181,14 @@ Do not use `~/.config`. Do not use `UserDefaults` as the store.
 
 | Layer | Choice |
 | --- | --- |
-| Chrome | SwiftUI (tabs, CRUD sheet, overlay) |
-| Pane | SwiftTerm in an `NSViewRepresentable` |
-| SSH | `/usr/bin/ssh` as a child process in the SwiftTerm PTY |
+| Chrome | egui (eframe) for tabs, the editor, and overlays |
+| Pane | vt100 screen on a PTY |
+| SSH | `/usr/bin/ssh` as a child of that PTY. If that path is missing, `ssh` on `PATH` |
 | Bundle id | `br.tec.lew.rterm` |
-| Toolchain | Xcode; XcodeGen via project `mise.toml` |
+| Toolchain | Rust 1.93.0 via mise. Linux local builds use conda gcc and binutils |
+| Release | GoReleaser links with zig for its default Rust targets |
 
-Do not use librio, rio-vt, Iced, or a winit/wgpu shell in v1.
+Do not use librio or rio-vt.
 
 Inline images (sixel, Kitty, iTerm) are not a requirement.
 
