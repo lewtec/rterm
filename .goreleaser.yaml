@@ -26,7 +26,7 @@ builds:
       - RTERM_VERSION={{ .Version }}
       - >-
         {{- if eq .Os "darwin" -}}
-        SDKROOT={{ env "HOME" }}/.cache/rterm/MacOSX14.5.sdk
+        SDKROOT={{ .Env.HOME }}/.cache/rterm/MacOSX14.5.sdk
         {{- end -}}
       - >-
         {{- if eq .Os "darwin" -}}
