@@ -123,7 +123,7 @@ pub fn encode(document: &CatalogDocument) -> String {
         if !place.user.is_empty() {
             lines.push(format!("user = {}", quote(&place.user)));
         }
-        if !place.is_local() && !place.host.is_empty() {
+        if !Place::is_loopback_host(&place.host) && !place.host.is_empty() {
             lines.push(format!("host = {}", quote(&place.host)));
         }
         lines.push(format!("backend = {}", quote(place.backend.as_str())));
@@ -335,7 +335,7 @@ mod tests {
             Place {
                 id: id("22222222-2222-2222-2222-222222222222"),
                 user: "ada".into(),
-                host: "whiterun".into(),
+                host: "remote.example".into(),
                 backend: Backend::Tmux,
                 session: Some("foo".into()),
                 label: Some("work".into()),
@@ -384,7 +384,7 @@ mod tests {
         [[place]]
         id = "11111111-1111-1111-1111-111111111111"
         user = "ada"
-        host = "whiterun"
+        host = "remote.example"
         backend = "tmux"
         "#,
         );

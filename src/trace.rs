@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn host_key_prompt_reveals_terminal() {
         assert_eq!(
-            event("The authenticity of host 'whiterun (10.0.0.2)' can't be established."),
+            event("The authenticity of host 'remote.example (10.0.0.2)' can't be established."),
             Some(Event::RevealTerminal)
         );
     }
@@ -144,20 +144,20 @@ mod tests {
     #[test]
     fn progress_headlines() {
         assert_eq!(
-            event("debug1: Connecting to whiterun [10.0.0.2] port 22."),
-            Some(Event::Progress("Connecting to whiterun".into()))
+            event("debug1: Connecting to remote.example [10.0.0.2] port 22."),
+            Some(Event::Progress("Connecting to remote.example".into()))
         );
         assert_eq!(
             event("debug1: Connection established."),
             Some(Event::Progress("Connected".into()))
         );
         assert_eq!(
-            event("debug1: Authenticating to whiterun:22 as 'ada'"),
-            Some(Event::Progress("Authenticating to whiterun:22".into()))
+            event("debug1: Authenticating to remote.example:22 as 'ada'"),
+            Some(Event::Progress("Authenticating to remote.example:22".into()))
         );
         assert_eq!(
-            event("Authenticated to whiterun ([10.0.0.2]:22) using \"publickey\"."),
-            Some(Event::Progress("Authenticated to whiterun".into()))
+            event("Authenticated to remote.example ([10.0.0.2]:22) using \"publickey\"."),
+            Some(Event::Progress("Authenticated to remote.example".into()))
         );
         assert_eq!(
             event(

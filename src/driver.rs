@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn remote_tmux_uses_ssh_keepalives() {
-        let place = Place::new("ada", "whiterun", Backend::Tmux, Some("foo".into()));
+        let place = Place::new("ada", "remote.example", Backend::Tmux, Some("foo".into()));
         assert_eq!(launch(&place, None).executable, SSH_EXECUTABLE);
         let mut expect = vec![
             "-t".into(),
@@ -175,14 +175,14 @@ mod tests {
             "ServerAliveCountMax=2".into(),
         ];
         expect.extend(control_master_options(&place));
-        expect.push("ada@whiterun".into());
+        expect.push("ada@remote.example".into());
         expect.push("exec \"$SHELL\" -lc 'tmux new-session -A -s '\\''foo'\\'''".into());
         assert_eq!(ssh_arguments(&place, None), expect);
     }
 
     #[test]
     fn tmux_quotes_session_name() {
-        let place = Place::new("ada", "whiterun", Backend::Tmux, Some("foo bar".into()));
+        let place = Place::new("ada", "remote.example", Backend::Tmux, Some("foo bar".into()));
         assert_eq!(remote_command(&place), "tmux new-session -A -s 'foo bar'");
         assert_eq!(
             ssh_arguments(&place, None).last().map(String::as_str),
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn remote_verbose_log_uses_dash_e() {
-        let place = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let place = Place::new("ada", "remote.example", Backend::Herdr, None);
         let path = "/tmp/rterm-ssh.log";
         assert_eq!(
             ssh_arguments(&place, Some(path))
@@ -287,6 +287,21 @@ mod tests {
     }
 
     #[test]
+    fn this_machine_does_not_use_ssh() {
+        let Some(name) = std::fs::read_to_string("/etc/hostname")
+            .ok()
+            .and_then(|text| text.lines().next().map(str::trim).map(str::to_string))
+            .filter(|name| !name.is_empty())
+        else {
+            return;
+        };
+        let place = Place::new("ada", name, Backend::Herdr, None);
+        assert!(place.is_local());
+        assert_eq!(launch(&place, None).executable, local_shell());
+        assert_eq!(place.display_label(), "ada@localhost:herdr");
+    }
+
+    #[test]
     fn localhost_is_local_not_ssh() {
         let place = Place::new("ada", "localhost", Backend::Herdr, None);
         assert!(place.is_local());
@@ -298,6 +313,7 @@ mod tests {
     #[test]
     fn loopback_literals_are_local() {
         assert!(Place::new("ada", "127.0.0.1", Backend::Herdr, None).is_local());
+        assert!(Place::new("ada", "127.0.1.1", Backend::Herdr, None).is_local());
         assert!(Place::new("ada", "::1", Backend::Herdr, None).is_local());
         assert!(Place::new("ada", "[::1]", Backend::Herdr, None).is_local());
         assert!(!Place::new("ada", "riverwood", Backend::Herdr, None).is_local());
@@ -305,8 +321,8 @@ mod tests {
 
     #[test]
     fn control_path_is_per_place() {
-        let first = Place::new("ada", "whiterun", Backend::Herdr, None);
-        let second = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let first = Place::new("ada", "remote.example", Backend::Herdr, None);
+        let second = Place::new("ada", "remote.example", Backend::Herdr, None);
         assert_ne!(control_path(&first), control_path(&second));
         assert!(control_path(&first).contains(&uuid_upper(first.id)));
         assert!(control_path(&first).contains("/rterm/cm-"));
@@ -314,7 +330,7 @@ mod tests {
 
     #[test]
     fn upload_uses_control_path_without_tty() {
-        let place = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let place = Place::new("ada", "remote.example", Backend::Herdr, None);
         let remote = "/tmp/rterm-paste-x.png";
         assert_eq!(
             upload_arguments(&place, remote),
@@ -323,7 +339,7 @@ mod tests {
                 "BatchMode=yes".into(),
                 "-o".into(),
                 format!("ControlPath={}", control_path(&place)),
-                "ada@whiterun".into(),
+                "ada@remote.example".into(),
                 "cat > '/tmp/rterm-paste-x.png'".into(),
             ]
         );

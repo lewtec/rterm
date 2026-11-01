@@ -135,26 +135,26 @@ mod tests {
 
     #[test]
     fn round_trip_uses_switch_key() {
-        let place = Place::new("ada", "whiterun", Backend::Herdr, None);
-        assert_eq!(place.switch_key(), "ada@whiterun:herdr");
+        let place = Place::new("ada", "remote.example", Backend::Herdr, None);
+        assert_eq!(place.switch_key(), "ada@remote.example:herdr");
         let url = url_for_place(&place);
         assert_eq!(url.scheme, "rterm");
         assert_eq!(url.host, "place");
         assert_eq!(
             switch_key_from(&url.raw).as_deref(),
-            Some("ada@whiterun:herdr")
+            Some("ada@remote.example:herdr")
         );
         assert_eq!(
-            switch_key_from("rterm://place/ada@whiterun:herdr").as_deref(),
-            Some("ada@whiterun:herdr")
+            switch_key_from("rterm://place/ada@remote.example:herdr").as_deref(),
+            Some("ada@remote.example:herdr")
         );
         assert!(switch_key_from("https://example.com").is_none());
     }
 
     #[test]
     fn tmux_session_stays_in_the_key() {
-        let place = Place::new("ada", "whiterun", Backend::Tmux, Some("foo".into()));
-        assert_eq!(place.switch_key(), "ada@whiterun:tmux(foo)");
+        let place = Place::new("ada", "remote.example", Backend::Tmux, Some("foo".into()));
+        assert_eq!(place.switch_key(), "ada@remote.example:tmux(foo)");
         assert_eq!(
             switch_key_from(&url_for_place(&place).raw).as_deref(),
             Some(place.switch_key().as_str())
@@ -163,17 +163,17 @@ mod tests {
 
     #[test]
     fn parse_switch_key_covers_spec_form() {
-        let herdr = Place::parse_switch_key("ada@whiterun").unwrap();
+        let herdr = Place::parse_switch_key("ada@remote.example").unwrap();
         assert_eq!(herdr.user, "ada");
-        assert_eq!(herdr.host, "whiterun");
+        assert_eq!(herdr.host, "remote.example");
         assert_eq!(herdr.backend, Backend::Herdr);
         assert!(herdr.session.is_none());
-        assert_eq!(herdr.switch_key(), "ada@whiterun:herdr");
+        assert_eq!(herdr.switch_key(), "ada@remote.example:herdr");
 
-        let explicit = Place::parse_switch_key("ada@whiterun:herdr").unwrap();
-        assert_eq!(explicit.switch_key(), "ada@whiterun:herdr");
+        let explicit = Place::parse_switch_key("ada@remote.example:herdr").unwrap();
+        assert_eq!(explicit.switch_key(), "ada@remote.example:herdr");
 
-        let tmux = Place::parse_switch_key("ada@whiterun:tmux(foo)").unwrap();
+        let tmux = Place::parse_switch_key("ada@remote.example:tmux(foo)").unwrap();
         assert_eq!(tmux.backend, Backend::Tmux);
         assert_eq!(tmux.session.as_deref(), Some("foo"));
 
@@ -182,8 +182,8 @@ mod tests {
         assert_eq!(local.user, "ada");
         assert!(local.is_local());
 
-        assert!(Place::parse_switch_key("ada@whiterun:tmux").is_none());
-        assert!(Place::parse_switch_key("whiterun:herdr").is_none());
+        assert!(Place::parse_switch_key("ada@remote.example:tmux").is_none());
+        assert!(Place::parse_switch_key("remote.example:herdr").is_none());
     }
 
     #[test]
@@ -191,14 +191,14 @@ mod tests {
         let place = Place {
             id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
             user: "ada".into(),
-            host: "whiterun".into(),
+            host: "remote.example".into(),
             backend: Backend::Herdr,
             session: None,
             label: None,
         };
         assert_eq!(
             place::file_name(0, &place),
-            "00-ada@whiterun-herdr.rterm-place"
+            "00-ada@remote.example-herdr.rterm-place"
         );
         let tmp = Tmp::new();
         let directory = tmp.0.clone();
@@ -211,7 +211,7 @@ mod tests {
         let file = directory.join(place::file_name(0, &place));
         assert_eq!(
             switch_key_from_file(&file).as_deref(),
-            Some("ada@whiterun:herdr")
+            Some("ada@remote.example:herdr")
         );
         assert_eq!(io.load().unwrap().places, vec![place]);
     }

@@ -1078,7 +1078,7 @@ mod tests {
         let mut editor = PlaceEditorState {
             origin_id: None,
             user: String::new(),
-            host: "whiterun".into(),
+            host: "remote.example".into(),
             backend: Backend::Tmux,
             session: String::new(),
             label: String::new(),

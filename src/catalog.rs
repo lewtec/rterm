@@ -281,7 +281,7 @@ mod tests {
         let tmp = Tmp::new();
         let directory = tmp.0.join("places");
         let places = vec![
-            Place::new("ada", "whiterun", Backend::Herdr, None),
+            Place::new("ada", "remote.example", Backend::Herdr, None),
             Place::new("ada", "riverwood", Backend::Tmux, Some("foo".into())),
         ];
         let io = CatalogIo::with_parts(directory, tmp.0.join("missing.toml"));
@@ -305,7 +305,7 @@ mod tests {
     fn save_renumbers_prefixes_after_reorder() {
         let tmp = Tmp::new();
         let directory = tmp.0.join("places");
-        let first = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let first = Place::new("ada", "remote.example", Backend::Herdr, None);
         let second = Place::new("ada", "riverwood", Backend::Tmux, Some("foo".into()));
         let third = Place::new("ada", "riften", Backend::Herdr, None);
         let io = CatalogIo::with_parts(directory.clone(), tmp.0.join("missing.toml"));
@@ -344,8 +344,8 @@ mod tests {
     fn take_pending_reads_and_removes_the_file() {
         let tmp = Tmp::new();
         let url = tmp.0.join("pending-place");
-        write_pending("ada@whiterun:herdr", &url);
-        assert_eq!(take_pending(&url).as_deref(), Some("ada@whiterun:herdr"));
+        write_pending("ada@remote.example:herdr", &url);
+        assert_eq!(take_pending(&url).as_deref(), Some("ada@remote.example:herdr"));
         assert!(take_pending(&url).is_none());
     }
 

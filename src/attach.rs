@@ -251,12 +251,12 @@ mod tests {
     fn progress_updates_attaching_title() {
         let mut attach = PlaceAttach::default();
         attach.select();
-        attach.note_progress("Authenticating to whiterun");
+        attach.note_progress("Authenticating to remote.example");
         assert_eq!(
             attach.phase(),
-            &Phase::Attaching("Authenticating to whiterun".into())
+            &Phase::Attaching("Authenticating to remote.example".into())
         );
-        attach.note_progress("Authenticating to whiterun");
+        attach.note_progress("Authenticating to remote.example");
         attach.note_tty();
         attach.note_progress("Waiting for remote");
         assert_eq!(attach.phase(), &Phase::Live);
@@ -314,9 +314,9 @@ mod tests {
     #[test]
     fn connecting_headline() {
         assert!(is_connecting_headline(CONNECTING_TITLE));
-        assert!(is_connecting_headline("Connecting to whiterun"));
+        assert!(is_connecting_headline("Connecting to remote.example"));
         assert!(!is_connecting_headline("Connected"));
-        assert!(!is_connecting_headline("Authenticating to whiterun"));
+        assert!(!is_connecting_headline("Authenticating to remote.example"));
         assert!(!is_connecting_headline("Offering key"));
     }
 
@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(attach.connect_attempt(), 2);
         assert_eq!(attach.generation(), 1);
 
-        attach.note_progress("Connecting to whiterun");
+        attach.note_progress("Connecting to remote.example");
         attach.note_connect_timeout();
         assert_eq!(attach.phase(), &Phase::Attaching(CONNECTING_TITLE.into()));
         assert_eq!(attach.connect_attempt(), 3);
@@ -353,11 +353,11 @@ mod tests {
     fn progress_does_not_regress_to_connecting_title() {
         let mut attach = PlaceAttach::default();
         attach.select();
-        attach.note_progress("Connecting to whiterun");
+        attach.note_progress("Connecting to remote.example");
         attach.note_progress(CONNECTING_TITLE);
         assert_eq!(
             attach.phase(),
-            &Phase::Attaching("Connecting to whiterun".into())
+            &Phase::Attaching("Connecting to remote.example".into())
         );
     }
 

@@ -101,7 +101,7 @@ mod tests {
     fn begin_clears_crumbs_when_asked() {
         let mut progress = ConnectProgress::new();
         progress.begin(true);
-        progress.ingest("debug1: Connecting to whiterun [10.0.0.2] port 22.");
+        progress.ingest("debug1: Connecting to remote.example [10.0.0.2] port 22.");
         assert_eq!(progress.crumbs().len(), 1);
         progress.begin(false);
         assert_eq!(progress.crumbs().len(), 1);
@@ -120,17 +120,17 @@ mod tests {
             recorded.lock().unwrap().push(text.to_string());
         }));
         progress.begin(true);
-        progress.ingest("debug1: Connecting to whiterun [10.0.0.2] port 22.");
+        progress.ingest("debug1: Connecting to remote.example [10.0.0.2] port 22.");
         progress.ingest("debug1: Connection established.");
-        progress.ingest("debug1: Authenticating to whiterun:22 as 'ada'");
-        assert_eq!(progress.headline(), "Authenticating to whiterun:22");
+        progress.ingest("debug1: Authenticating to remote.example:22 as 'ada'");
+        assert_eq!(progress.headline(), "Authenticating to remote.example:22");
         assert_eq!(progress.crumbs().len(), 3);
         assert!(
             headlines
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|line| line == "Authenticating to whiterun:22")
+                .any(|line| line == "Authenticating to remote.example:22")
         );
         for index in 0..MAX_CRUMBS {
             progress.ingest(&format!("debug1: extra crumb {index}"));
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn ingest_ignored_while_hidden() {
         let mut progress = ConnectProgress::new();
-        progress.ingest("debug1: Connecting to whiterun [10.0.0.2] port 22.");
+        progress.ingest("debug1: Connecting to remote.example [10.0.0.2] port 22.");
         assert!(progress.crumbs().is_empty());
         assert_eq!(progress.headline(), CONNECTING_TITLE);
     }

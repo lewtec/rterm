@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use uuid::Uuid;
 
 use crate::backend::Backend;
@@ -31,18 +33,17 @@ impl Place {
     }
 
     pub fn is_local(&self) -> bool {
-        Self::is_loopback_host(&self.host)
+        Self::is_loopback_host(&self.host) || is_this_machine(&self.host)
     }
 
     pub fn is_loopback_host(host: &str) -> bool {
-        let mut value = host.trim().to_string();
-        if value.starts_with('[') && value.ends_with(']') && value.len() >= 2 {
-            value = value[1..value.len() - 1].to_string();
+        let value = normalize_host(host);
+        if is_ipv4_loopback(&value) {
+            return true;
         }
-        value = value.trim_matches('.').to_ascii_lowercase();
         matches!(
             value.as_str(),
-            "" | "localhost" | "localhost.localdomain" | "127.0.0.1" | "0.0.0.0" | "::1"
+            "" | "localhost" | "localhost.localdomain" | "0.0.0.0" | "::1"
         ) || value.ends_with(".localhost")
     }
 
@@ -147,6 +148,72 @@ struct BackendSuffix {
     head: String,
     backend: Backend,
     session: Option<String>,
+}
+
+fn normalize_host(host: &str) -> String {
+    let mut value = host.trim().to_string();
+    if value.starts_with('[') && value.ends_with(']') && value.len() >= 2 {
+        value = value[1..value.len() - 1].to_string();
+    }
+    value.trim_matches('.').to_ascii_lowercase()
+}
+
+fn is_ipv4_loopback(value: &str) -> bool {
+    let mut parts = value.split('.');
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if first != "127" {
+        return false;
+    }
+    let rest: Vec<_> = parts.collect();
+    rest.len() == 3
+        && rest.iter().all(|part| {
+            !part.is_empty() && part.len() <= 3 && part.chars().all(|ch| ch.is_ascii_digit())
+        })
+}
+
+fn is_this_machine(host: &str) -> bool {
+    let value = normalize_host(host);
+    if value.is_empty() {
+        return false;
+    }
+    machine_names().iter().any(|name| name == &value)
+}
+
+fn machine_names() -> &'static Vec<String> {
+    static NAMES: OnceLock<Vec<String>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut names = Vec::new();
+        if let Ok(text) = std::fs::read_to_string("/etc/hostname") {
+            for line in text.lines() {
+                remember_name(&mut names, line);
+            }
+        }
+        if let Ok(output) = std::process::Command::new("hostname").output()
+            && output.status.success()
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
+            remember_name(&mut names, text.trim());
+        }
+        names
+    })
+}
+
+fn remember_name(names: &mut Vec<String>, raw: &str) {
+    let value = normalize_host(raw);
+    if value.is_empty() || Place::is_loopback_host(&value) {
+        return;
+    }
+    if !names.iter().any(|name| name == &value) {
+        names.push(value.clone());
+    }
+    if let Some((short, _)) = value.split_once('.')
+        && !short.is_empty()
+        && !names.iter().any(|name| name == short)
+    {
+        names.push(short.to_string());
+    }
 }
 
 fn parse_backend_suffix(text: &str) -> Option<BackendSuffix> {

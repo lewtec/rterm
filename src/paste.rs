@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn remote_deliver_fails_without_control_socket() {
-        let place = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let place = Place::new("ada", "remote.example", Backend::Herdr, None);
         let png = b"png";
         let mut called = false;
         let result = deliver(
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn remote_deliver_uploads_when_socket_exists() {
-        let place = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let place = Place::new("ada", "remote.example", Backend::Herdr, None);
         let socket = driver::control_path(&place);
         driver::prepare_control_socket_directory();
         std::fs::write(&socket, []).unwrap();

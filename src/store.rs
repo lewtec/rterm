@@ -476,13 +476,13 @@ mod tests {
         {
             let editor = store.editor.as_mut().unwrap();
             editor.user = "ada".into();
-            editor.host = "whiterun".into();
+            editor.host = "remote.example".into();
             editor.backend = Backend::Herdr;
         }
         store.save_editor();
         let second = store.places.last().unwrap().id;
         store.select(first);
-        catalog::write_pending("ada@whiterun:herdr", &store.catalog.pending_place_file());
+        catalog::write_pending("ada@remote.example:herdr", &store.catalog.pending_place_file());
         store.consume_pending_place();
         assert_eq!(store.selected_id, Some(second));
         store.consume_pending_place();
@@ -498,7 +498,7 @@ mod tests {
         {
             let editor = store.editor.as_mut().unwrap();
             editor.user = "ada".into();
-            editor.host = "whiterun".into();
+            editor.host = "remote.example".into();
             editor.backend = Backend::Herdr;
         }
         store.save_editor();
@@ -507,7 +507,7 @@ mod tests {
         store.open_place_id(second);
         assert_eq!(store.selected_id, Some(second));
         store.select(first);
-        store.open_place_switch_key("ada@whiterun:herdr");
+        store.open_place_switch_key("ada@remote.example:herdr");
         assert_eq!(store.selected_id, Some(second));
         store.open_place_id(Uuid::new_v4());
         assert_eq!(store.selected_id, Some(second));
@@ -517,7 +517,7 @@ mod tests {
     fn move_place_renumbers_files() {
         let tmp = Tmp::new();
         let directory = tmp.0.join("places");
-        let first = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let first = Place::new("ada", "remote.example", Backend::Herdr, None);
         let second = Place::new("ada", "riverwood", Backend::Herdr, None);
         let third = Place::new("ada", "riften", Backend::Herdr, None);
         let io = CatalogIo::with_parts(directory.clone(), tmp.0.join("missing.toml"));
@@ -652,7 +652,7 @@ mod tests {
         store.select(first);
         {
             let progress = store.connect_progress_mut(first).unwrap();
-            progress.ingest("debug1: Connecting to whiterun [10.0.0.2] port 22.");
+            progress.ingest("debug1: Connecting to remote.example [10.0.0.2] port 22.");
             progress.ingest("debug1: Connection established.");
             assert_eq!(progress.crumbs().len(), 2);
         }

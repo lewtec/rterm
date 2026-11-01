@@ -40,14 +40,14 @@ v1 runs on macOS 14 and on Linux. Windows is out of scope. A later release still
 A place is:
 
 - user (required when the place is remote)
-- host (empty, `localhost`, `127.0.0.1`, or `::1` means this Mac)
+- host (empty, a loopback name, or this machine's hostname means local)
 - backend: `herdr`, `tmux`, or `screen`
 - session name: required for `tmux` and `screen`; absent for `herdr`
 - label: optional
 
 herdr has no session name in rterm.
 
-An empty host or a loopback host (`localhost`, `127.0.0.1`, `::1`) is a local place. Attach runs the mux on this Mac as the Mac login user. Do not use SSH. Persist no host. If user is empty, use `NSUserName()`. Default label is `user@localhost:herdr`.
+An empty host, a loopback host (`localhost`, `127.0.0.1`, `::1`), or this machine's hostname is a local place. Attach runs the mux on this machine as the login user. Do not use SSH. Persist no host for a loopback name. Keep this machine's hostname in the catalog. If user is empty, use the login name. Default label is `user@localhost:herdr`.
 
 If the user leaves the label empty, the default is:
 
