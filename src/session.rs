@@ -8,6 +8,7 @@ use std::time::Duration;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
 use rterm::attach::CONNECT_TIMEOUT_SECONDS;
 use rterm::driver;
+use rterm::kitty::Keyboard;
 use rterm::place::Place;
 use rterm::watchdog::Watchdog;
 
@@ -22,6 +23,7 @@ pub struct Session {
     rows: u16,
     cols: u16,
     parser: vt100::Parser,
+    keyboard: Keyboard,
     writer: Option<Box<dyn Write + Send>>,
     master: Option<Box<dyn MasterPty + Send>>,
     child: Option<Box<dyn Child + Send + Sync>>,
@@ -116,6 +118,7 @@ impl Session {
             rows: 24,
             cols: 80,
             parser: vt100::Parser::new(rows, cols, 1_000),
+            keyboard: Keyboard::new(),
             writer: Some(writer),
             master: Some(pair.master),
             child: Some(child),
@@ -135,6 +138,10 @@ impl Session {
 
     pub fn screen(&self) -> &vt100::Screen {
         self.parser.screen()
+    }
+
+    pub fn kitty_flags(&self) -> u16 {
+        self.keyboard.flags()
     }
 
     pub fn write(&mut self, bytes: &[u8]) {
@@ -175,7 +182,11 @@ impl Session {
                 Event::Bytes(bytes) => {
                     if !bytes.is_empty() {
                         let first = !self.announced;
-                        self.parser.process(&bytes);
+                        let (rest, reply) = self.keyboard.feed(&bytes);
+                        if !reply.is_empty() {
+                            self.write(&reply);
+                        }
+                        self.parser.process(&rest);
                         if first {
                             self.announced = true;
                             self.watchdog.cancel();

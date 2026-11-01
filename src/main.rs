@@ -1,4 +1,5 @@
 mod clip;
+mod fill;
 mod gui;
 mod keys;
 mod session;

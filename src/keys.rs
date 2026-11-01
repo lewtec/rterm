@@ -32,6 +32,7 @@ pub enum Input {
         mac_cmd: bool,
         alt: bool,
         shift: bool,
+        repeat: bool,
     },
 }
 
@@ -76,7 +77,19 @@ pub fn estimated_tab_width(label: &str) -> f64 {
     8.0 + 7.0 + 6.0 + label.chars().count() as f64 * 7.2 + 8.0
 }
 
+#[cfg(test)]
 pub fn interpret(batch: &[Input], fill: bool, editor_open: bool, text_field: bool) -> Vec<Action> {
+    interpret_with(batch, fill, editor_open, text_field, 0, false)
+}
+
+pub fn interpret_with(
+    batch: &[Input],
+    fill: bool,
+    editor_open: bool,
+    text_field: bool,
+    kitty_flags: u16,
+    app_cursor: bool,
+) -> Vec<Action> {
     let mut out = Vec::new();
     let mut pasted: Option<String> = None;
     let mut saw_paste_key = false;
@@ -93,13 +106,34 @@ pub fn interpret(batch: &[Input], fill: bool, editor_open: bool, text_field: boo
                     pasted = Some(text.clone());
                 }
             }
-            Input::Key { pressed: false, .. } => {}
+            Input::Key {
+                pressed: false,
+                key,
+                ctrl,
+                mac_cmd,
+                alt,
+                shift,
+                ..
+            } => {
+                if let Some(bytes) = kitty_bytes(
+                    *key,
+                    *ctrl,
+                    *mac_cmd,
+                    *alt,
+                    *shift,
+                    rterm::kitty::Phase::Release,
+                    kitty_flags,
+                ) {
+                    out.push(Action::Write(bytes));
+                }
+            }
             Input::Key {
                 key,
                 ctrl,
                 mac_cmd,
                 alt,
                 shift,
+                repeat,
                 pressed: true,
             } => {
                 if *ctrl && *mac_cmd && *key == NamedKey::Letter(b'f') {
@@ -138,12 +172,34 @@ pub fn interpret(batch: &[Input], fill: bool, editor_open: bool, text_field: boo
                 if *key == NamedKey::Escape {
                     if fill {
                         out.push(Action::ExitFill);
+                    } else if let Some(bytes) = kitty_bytes(
+                        *key,
+                        *ctrl,
+                        *mac_cmd,
+                        *alt,
+                        *shift,
+                        phase(*repeat),
+                        kitty_flags,
+                    ) {
+                        out.push(Action::Write(bytes));
                     } else {
                         out.push(Action::Write(b"\x1b".to_vec()));
                     }
                     continue;
                 }
-                if let Some(bytes) = special_bytes(*key, *shift) {
+                if let Some(bytes) = kitty_bytes(
+                    *key,
+                    *ctrl,
+                    *mac_cmd,
+                    *alt,
+                    *shift,
+                    phase(*repeat),
+                    kitty_flags,
+                ) {
+                    out.push(Action::Write(bytes));
+                    continue;
+                }
+                if let Some(bytes) = special_bytes(*key, *shift, app_cursor) {
                     out.push(Action::Write(bytes));
                     continue;
                 }
@@ -180,26 +236,85 @@ fn is_special_text(text: &str) -> bool {
     matches!(text, "\n" | "\r" | "\t")
 }
 
-pub fn special_bytes(key: NamedKey, shift: bool) -> Option<Vec<u8>> {
-    let bytes: &[u8] = match key {
-        NamedKey::Enter => b"\r",
-        NamedKey::Backspace => b"\x7f",
-        NamedKey::Tab if shift => b"\x1b[Z",
-        NamedKey::Tab => b"\t",
-        NamedKey::Up => b"\x1b[A",
-        NamedKey::Down => b"\x1b[B",
-        NamedKey::Right => b"\x1b[C",
-        NamedKey::Left => b"\x1b[D",
-        NamedKey::Home => b"\x1b[H",
-        NamedKey::End => b"\x1b[F",
-        NamedKey::PageUp => b"\x1b[5~",
-        NamedKey::PageDown => b"\x1b[6~",
-        NamedKey::Delete => b"\x1b[3~",
-        NamedKey::Insert => b"\x1b[2~",
-        NamedKey::Escape => b"\x1b",
-        _ => return None,
+pub fn special_bytes(key: NamedKey, shift: bool, app_cursor: bool) -> Option<Vec<u8>> {
+    let cursor = |letter: u8| {
+        if app_cursor {
+            vec![0x1b, b'O', letter]
+        } else {
+            vec![0x1b, b'[', letter]
+        }
     };
-    Some(bytes.to_vec())
+    Some(match key {
+        NamedKey::Enter => b"\r".to_vec(),
+        NamedKey::Backspace => b"\x7f".to_vec(),
+        NamedKey::Tab if shift => b"\x1b[Z".to_vec(),
+        NamedKey::Tab => b"\t".to_vec(),
+        NamedKey::Up => cursor(b'A'),
+        NamedKey::Down => cursor(b'B'),
+        NamedKey::Right => cursor(b'C'),
+        NamedKey::Left => cursor(b'D'),
+        NamedKey::Home => cursor(b'H'),
+        NamedKey::End => cursor(b'F'),
+        NamedKey::PageUp => b"\x1b[5~".to_vec(),
+        NamedKey::PageDown => b"\x1b[6~".to_vec(),
+        NamedKey::Delete => b"\x1b[3~".to_vec(),
+        NamedKey::Insert => b"\x1b[2~".to_vec(),
+        NamedKey::Escape => b"\x1b".to_vec(),
+        _ => return None,
+    })
+}
+
+fn phase(repeat: bool) -> rterm::kitty::Phase {
+    if repeat {
+        rterm::kitty::Phase::Repeat
+    } else {
+        rterm::kitty::Phase::Press
+    }
+}
+
+fn kitty_bytes(
+    key: NamedKey,
+    ctrl: bool,
+    mac_cmd: bool,
+    alt: bool,
+    shift: bool,
+    phase: rterm::kitty::Phase,
+    flags: u16,
+) -> Option<Vec<u8>> {
+    let key = kitty_key(key)?;
+    rterm::kitty::encode(
+        flags,
+        key,
+        rterm::kitty::Mods {
+            ctrl,
+            alt,
+            shift,
+            super_key: mac_cmd,
+        },
+        phase,
+    )
+}
+
+fn kitty_key(key: NamedKey) -> Option<rterm::kitty::Key> {
+    use rterm::kitty::Key;
+    Some(match key {
+        NamedKey::Letter(ch) => Key::Char(ch as char),
+        NamedKey::Digit(digit) => Key::Char((b'0' + digit) as char),
+        NamedKey::Escape => Key::Escape,
+        NamedKey::Enter => Key::Enter,
+        NamedKey::Tab => Key::Tab,
+        NamedKey::Backspace => Key::Backspace,
+        NamedKey::Up => Key::Up,
+        NamedKey::Down => Key::Down,
+        NamedKey::Left => Key::Left,
+        NamedKey::Right => Key::Right,
+        NamedKey::Home => Key::Home,
+        NamedKey::End => Key::End,
+        NamedKey::PageUp => Key::PageUp,
+        NamedKey::PageDown => Key::PageDown,
+        NamedKey::Insert => Key::Insert,
+        NamedKey::Delete => Key::Delete,
+    })
 }
 
 #[cfg(test)]
@@ -211,6 +326,7 @@ fn key(key: NamedKey, ctrl: bool, mac_cmd: bool, alt: bool, shift: bool) -> Inpu
         mac_cmd,
         alt,
         shift,
+        repeat: false,
     }
 }
 

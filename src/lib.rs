@@ -1,9 +1,11 @@
 pub mod attach;
 pub mod backend;
 pub mod catalog;
+pub mod click;
 pub mod codec;
 pub mod driver;
 pub mod hud;
+pub mod kitty;
 pub mod link;
 pub mod notch;
 pub mod paste;

@@ -1,5 +1,53 @@
 use crate::place::Place;
 
+pub const TRAFFIC_WIDTH: f64 = 78.0;
+
+/// One side of the menu-bar band beside the camera housing.
+#[derive(Clone, Copy, Debug)]
+pub struct Band {
+    pub min_x: f64,
+    pub max_x: f64,
+    pub height: f64,
+}
+
+/// Where the tab row sits while the window covers the menu bar.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FillSplit {
+    pub left_cap: f64,
+    pub right_cap: f64,
+    pub notch_width: f64,
+    pub row_height: f64,
+}
+
+/// Split the menu-bar band around the notch. `right_reserve` is the width of
+/// the buttons that stay at the right edge.
+pub fn fill_split(
+    window_min_x: f64,
+    window_max_x: f64,
+    left: Option<Band>,
+    right: Option<Band>,
+    right_reserve: f64,
+) -> FillSplit {
+    if let (Some(left), Some(right)) = (left, right)
+        && left.max_x - left.min_x > 1.0
+        && right.max_x - right.min_x > 1.0
+    {
+        return FillSplit {
+            left_cap: (left.max_x - window_min_x - TRAFFIC_WIDTH).max(0.0),
+            right_cap: (window_max_x - right.min_x - right_reserve).max(0.0),
+            notch_width: (right.min_x - left.max_x).max(0.0),
+            row_height: left.height.max(right.height).max(28.0),
+        };
+    }
+    let width = (window_max_x - window_min_x).max(0.0);
+    FillSplit {
+        left_cap: (width / 2.0 - TRAFFIC_WIDTH).max(120.0),
+        right_cap: (width / 2.0 - right_reserve).max(120.0),
+        notch_width: 0.0,
+        row_height: 32.0,
+    }
+}
+
 pub fn split(
     places: &[Place],
     left_cap: f64,
@@ -80,6 +128,38 @@ mod tests {
         let (leading, trailing) = split(&places, 10.0, |_| 50.0, 2.0);
         assert_eq!(leading[0].host, "wide");
         assert_eq!(trailing[0].host, "next");
+    }
+
+    #[test]
+    fn notch_band_leaves_a_gap_for_the_housing() {
+        let split = fill_split(
+            0.0,
+            1400.0,
+            Some(Band {
+                min_x: 0.0,
+                max_x: 500.0,
+                height: 32.0,
+            }),
+            Some(Band {
+                min_x: 900.0,
+                max_x: 1400.0,
+                height: 30.0,
+            }),
+            28.0,
+        );
+        assert_eq!(split.left_cap, 422.0);
+        assert_eq!(split.right_cap, 472.0);
+        assert_eq!(split.notch_width, 400.0);
+        assert_eq!(split.row_height, 32.0);
+    }
+
+    #[test]
+    fn missing_notch_splits_the_menu_bar_in_half() {
+        let split = fill_split(0.0, 1000.0, None, None, 28.0);
+        assert_eq!(split.left_cap, 500.0 - TRAFFIC_WIDTH);
+        assert_eq!(split.right_cap, 500.0 - 28.0);
+        assert_eq!(split.notch_width, 0.0);
+        assert_eq!(split.row_height, 32.0);
     }
 
     #[test]

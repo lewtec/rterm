@@ -47,6 +47,9 @@ pub struct RtermApp {
     sleep: SleepWatch,
     fill: bool,
     windowed_size: Option<egui::Vec2>,
+    notch: Option<rterm::notch::FillSplit>,
+    mac_fill: Option<crate::fill::Backup>,
+    last_cell: Option<(u16, u16)>,
     drag_from: Option<Uuid>,
     tab_rects: Vec<(Uuid, egui::Rect)>,
     paste: PasteRun,
@@ -62,6 +65,9 @@ impl RtermApp {
             sleep: SleepWatch::start(),
             fill: false,
             windowed_size: None,
+            notch: None,
+            mac_fill: None,
+            last_cell: None,
             drag_from: None,
             tab_rects: Vec::new(),
             paste: PasteRun {
@@ -277,16 +283,38 @@ impl RtermApp {
     fn toggle_fill(&mut self, ctx: &egui::Context) {
         if self.fill {
             self.fill = false;
+            self.leave_fill(ctx);
+        } else {
+            self.windowed_size = Some(ctx.input(|input| input.screen_rect().size()));
+            self.fill = true;
+            self.enter_fill(ctx);
+        }
+    }
+
+    fn enter_fill(&mut self, ctx: &egui::Context) {
+        #[cfg(not(target_os = "macos"))]
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = ctx;
+        }
+    }
+
+    fn leave_fill(&mut self, ctx: &egui::Context) {
+        #[cfg(not(target_os = "macos"))]
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
             if let Some(size) = self.windowed_size {
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
             }
-        } else {
-            self.windowed_size = Some(ctx.input(|input| input.screen_rect().size()));
-            self.fill = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = ctx;
         }
     }
 
@@ -300,6 +328,7 @@ impl RtermApp {
                 egui::Event::Key {
                     key,
                     pressed,
+                    repeat,
                     modifiers,
                     ..
                 } => {
@@ -307,6 +336,7 @@ impl RtermApp {
                         batch.push(Input::Key {
                             key: named,
                             pressed,
+                            repeat,
                             ctrl: modifiers.ctrl,
                             mac_cmd: modifiers.mac_cmd,
                             alt: modifiers.alt,
@@ -317,18 +347,22 @@ impl RtermApp {
                 _ => {}
             }
         }
-        let actions = keys::interpret(
+        let (kitty_flags, app_cursor) = self.terminal_mode();
+        let actions = keys::interpret_with(
             &batch,
             self.fill,
             self.store.editor.is_some(),
             ctx.wants_keyboard_input(),
+            kitty_flags,
+            app_cursor,
         );
         self.apply(ctx, actions);
     }
 }
 
 impl eframe::App for RtermApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.notch = crate::fill::sync(self.fill, &mut self.mac_fill, frame);
         self.pump();
         self.handle_input(ctx);
         self.tab_rects.clear();
@@ -352,33 +386,37 @@ impl eframe::App for RtermApp {
 
 impl RtermApp {
     fn chrome(&mut self, ui: &mut egui::Ui) {
+        let row_h = self
+            .notch
+            .map(|split| split.row_height as f32)
+            .unwrap_or(ROW_HEIGHT);
         let bar = ui.available_rect_before_wrap();
-        let chrome_rect = egui::Rect::from_min_size(bar.min, egui::vec2(bar.width(), ROW_HEIGHT));
+        let chrome_rect = egui::Rect::from_min_size(bar.min, egui::vec2(bar.width(), row_h));
         ui.painter()
             .rect_filled(chrome_rect, 0.0, egui::Color32::from_rgb(36, 36, 38));
         ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), ROW_HEIGHT),
+            egui::vec2(ui.available_width(), row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 if self.fill {
                     self.traffic(ui);
                 }
                 let places = self.store.places.clone();
-                let (leading, trailing) = if self.fill {
-                    let width = (ui.available_width() - 36.0).max(0.0);
-                    rterm::notch::split(&places, width as f64, tab_width, 2.0)
+                if let Some(split) = self.notch {
+                    let (leading, trailing) =
+                        rterm::notch::split(&places, split.left_cap, tab_width, 2.0);
+                    self.place_tabs(ui, &leading, split.left_cap as f32, "tabs-left", false);
+                    if split.notch_width > 0.5 {
+                        ui.allocate_exact_size(
+                            egui::vec2(split.notch_width as f32, row_h),
+                            egui::Sense::hover(),
+                        );
+                    }
+                    self.place_tabs(ui, &trailing, split.right_cap as f32, "tabs-right", true);
                 } else {
-                    (places, Vec::new())
-                };
-                egui::ScrollArea::horizontal()
-                    .id_salt("tabs")
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            for place in leading.iter().chain(trailing.iter()) {
-                                self.tab(ui, place);
-                            }
-                        });
-                    });
+                    let width = (ui.available_width() - 120.0).max(0.0);
+                    self.place_tabs(ui, &places, width, "tabs", false);
+                }
                 ui.menu_button("Place", |ui| self.place_menu(ui));
                 if ui.button("+").on_hover_text("Add Place").clicked() {
                     self.store.begin_add();
@@ -397,6 +435,53 @@ impl RtermApp {
             self.store.move_place(from, onto);
         }
         ui.separator();
+    }
+
+    fn place_tabs(
+        &mut self,
+        ui: &mut egui::Ui,
+        places: &[Place],
+        cap: f32,
+        salt: &str,
+        align_right: bool,
+    ) {
+        let content: f32 = places
+            .iter()
+            .map(|place| tab_width(place) as f32 + 2.0)
+            .sum();
+        let cap = cap.max(0.0);
+        if align_right && content < cap {
+            ui.allocate_exact_size(egui::vec2(cap - content, 1.0), egui::Sense::hover());
+        }
+        let width = if align_right { content.min(cap) } else { cap };
+        ui.allocate_ui_with_layout(
+            egui::vec2(width, ui.available_height()),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                egui::ScrollArea::horizontal()
+                    .id_salt(salt)
+                    .scroll_bar_visibility(
+                        egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                    )
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for place in places {
+                                self.tab(ui, place);
+                            }
+                        });
+                    });
+            },
+        );
+    }
+
+    fn terminal_mode(&self) -> (u16, bool) {
+        let Some(id) = self.store.selected_id else {
+            return (0, false);
+        };
+        let Some(session) = self.sessions.get(&id) else {
+            return (0, false);
+        };
+        (session.kitty_flags(), session.screen().application_cursor())
     }
 
     fn traffic(&mut self, ui: &mut egui::Ui) {
@@ -531,7 +616,7 @@ impl RtermApp {
         let rect = ui.available_rect_before_wrap();
         ui.painter()
             .rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 18, 18));
-        ui.allocate_rect(rect, egui::Sense::hover());
+        let response = ui.allocate_rect(rect, egui::Sense::click());
         if self.store.places.is_empty() {
             center_text(ui, rect, "No places", "Add a place to attach later.");
             return;
@@ -559,6 +644,7 @@ impl RtermApp {
             if let Some(session) = self.sessions.get_mut(&place.id) {
                 session.fit(rect.width(), rect.height(), char_w, char_h);
                 paint_screen(ui, rect, session.screen(), &font, char_w, char_h);
+                self.pointer_pane(ui, &response, rect, place.id, char_w, char_h);
             }
             if let Some(progress) = self.store.connect_progress(place.id)
                 && progress.is_visible()
@@ -582,6 +668,69 @@ impl RtermApp {
         }
         if self.store.debug_overlay && failure_overlay(ui, rect, "debug overlay").clicked() {
             self.store.reconnect(place.id);
+        }
+    }
+
+    fn pointer_pane(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        rect: egui::Rect,
+        place_id: Uuid,
+        char_w: f32,
+        char_h: f32,
+    ) {
+        let Some(pos) =
+            ui.input(|input| input.pointer.hover_pos().or(input.pointer.interact_pos()))
+        else {
+            return;
+        };
+        if !rect.contains(pos) {
+            return;
+        }
+        let col = ((pos.x - rect.min.x) / char_w).floor().max(0.0) as u16;
+        let row = ((pos.y - rect.min.y) / char_h).floor().max(0.0) as u16;
+        let pressed = ui.input(|input| input.pointer.primary_pressed());
+        let released = ui.input(|input| input.pointer.primary_released());
+        let down = ui.input(|input| input.pointer.primary_down());
+        let moved = self.last_cell != Some((col, row));
+        let Some(session) = self.sessions.get_mut(&place_id) else {
+            return;
+        };
+        let mode = session.screen().mouse_protocol_mode();
+        let encoding = session.screen().mouse_protocol_encoding();
+        if mode != vt100::MouseProtocolMode::None {
+            let click = if pressed {
+                Some(rterm::click::Click::Press)
+            } else if released {
+                Some(rterm::click::Click::Release)
+            } else if down && moved {
+                Some(rterm::click::Click::Drag)
+            } else if moved {
+                Some(rterm::click::Click::Move)
+            } else {
+                None
+            };
+            if let Some(click) = click
+                && let Some(bytes) = rterm::click::report(mode, encoding, click, 0, col, row)
+            {
+                session.write(&bytes);
+            }
+            self.last_cell = Some((col, row));
+            return;
+        }
+        self.last_cell = Some((col, row));
+        if response.clicked()
+            && let Some(url) = rterm::click::link_at(session.screen(), row, col)
+        {
+            let _ = rterm::paths::open_directory(std::path::Path::new(&url));
+            response
+                .clone()
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+        } else if rterm::click::link_at(session.screen(), row, col).is_some() {
+            response
+                .clone()
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
         }
     }
 
@@ -829,6 +978,7 @@ fn paint_screen(
     let cols = cols.get();
     let painter = ui.painter();
     for row in 0..rows {
+        let links = rterm::click::links_in_row(screen, row);
         let mut col = 0u16;
         while col < cols {
             let Some(cell) = screen.cell(row, col) else {
@@ -854,6 +1004,16 @@ fn paint_screen(
             let text = cell.contents();
             if !text.is_empty() && text != " " {
                 painter.text(origin, egui::Align2::LEFT_TOP, text, font.clone(), fg);
+            }
+            if links
+                .iter()
+                .any(|(start, end, _)| col >= *start && col <= *end)
+            {
+                painter.hline(
+                    cell_rect.x_range(),
+                    cell_rect.bottom() - 1.0,
+                    egui::Stroke::new(1.0, fg),
+                );
             }
             col += span;
         }
