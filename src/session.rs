@@ -78,6 +78,9 @@ impl Session {
             cmd.cwd(dir);
         }
         cmd.env("TERM", "xterm-256color");
+        // herdr refuses to attach when it inherits a parent pane. rterm is
+        // often started inside herdr, so the child must be a fresh client.
+        clear_herdr_identity(&mut cmd);
         let child = pair
             .slave
             .spawn_command(cmd)
@@ -292,6 +295,16 @@ fn tail_log(
     let _ = std::fs::remove_file(path);
 }
 
+fn clear_herdr_identity(cmd: &mut portable_pty::CommandBuilder) {
+    let keys: Vec<String> = std::env::vars()
+        .map(|(key, _)| key)
+        .filter(|key| key.starts_with("HERDR_"))
+        .collect();
+    for key in keys {
+        cmd.env_remove(key);
+    }
+}
+
 pub fn exit_code(status: &portable_pty::ExitStatus) -> Option<i32> {
     if status.signal().is_some() {
         None
@@ -303,6 +316,16 @@ pub fn exit_code(status: &portable_pty::ExitStatus) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn child_does_not_inherit_herdr_identity() {
+        let key = "HERDR_RTERM_TEST_IDENTITY";
+        unsafe { std::env::set_var(key, "1") };
+        let mut cmd = portable_pty::CommandBuilder::new("true");
+        clear_herdr_identity(&mut cmd);
+        assert!(cmd.get_env(key).is_none());
+        unsafe { std::env::remove_var(key) };
+    }
 
     #[test]
     fn exit_status_mapping() {
