@@ -482,7 +482,10 @@ mod tests {
         store.save_editor();
         let second = store.places.last().unwrap().id;
         store.select(first);
-        catalog::write_pending("ada@remote.example:herdr", &store.catalog.pending_place_file());
+        catalog::write_pending(
+            "ada@remote.example:herdr",
+            &store.catalog.pending_place_file(),
+        );
         store.consume_pending_place();
         assert_eq!(store.selected_id, Some(second));
         store.consume_pending_place();

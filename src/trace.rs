@@ -153,7 +153,9 @@ mod tests {
         );
         assert_eq!(
             event("debug1: Authenticating to remote.example:22 as 'ada'"),
-            Some(Event::Progress("Authenticating to remote.example:22".into()))
+            Some(Event::Progress(
+                "Authenticating to remote.example:22".into()
+            ))
         );
         assert_eq!(
             event("Authenticated to remote.example ([10.0.0.2]:22) using \"publickey\"."),

@@ -345,7 +345,10 @@ mod tests {
         let tmp = Tmp::new();
         let url = tmp.0.join("pending-place");
         write_pending("ada@remote.example:herdr", &url);
-        assert_eq!(take_pending(&url).as_deref(), Some("ada@remote.example:herdr"));
+        assert_eq!(
+            take_pending(&url).as_deref(),
+            Some("ada@remote.example:herdr")
+        );
         assert!(take_pending(&url).is_none());
     }
 

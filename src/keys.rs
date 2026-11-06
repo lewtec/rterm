@@ -77,6 +77,27 @@ pub fn estimated_tab_width(label: &str) -> f64 {
     8.0 + 7.0 + 6.0 + label.chars().count() as f64 * 7.2 + 8.0
 }
 
+/// Text to write for one frame.
+///
+/// An IME commit replaces plain text from that frame, so a dead key is not
+/// also sent as its base letter.
+pub fn frame_text(commits: &[String], texts: &[String]) -> Vec<String> {
+    let commits: Vec<String> = commits
+        .iter()
+        .filter(|text| !text.is_empty())
+        .cloned()
+        .collect();
+    if commits.is_empty() {
+        texts
+            .iter()
+            .filter(|text| !text.is_empty())
+            .cloned()
+            .collect()
+    } else {
+        commits
+    }
+}
+
 #[cfg(test)]
 pub fn interpret(batch: &[Input], fill: bool, editor_open: bool, text_field: bool) -> Vec<Action> {
     interpret_with(batch, fill, editor_open, text_field, 0, false)
@@ -367,6 +388,28 @@ mod tests {
             Byte(0x16)
         );
         assert_eq!(paste_effect(false, false, true, Gesture::CommandV), None);
+    }
+
+    #[test]
+    fn ime_commit_replaces_the_base_letter() {
+        assert_eq!(
+            frame_text(&["á".into()], &["a".into(), "á".into()]),
+            vec!["á".to_string()]
+        );
+        assert_eq!(frame_text(&[], &["á".into()]), vec!["á".to_string()]);
+        assert_eq!(
+            frame_text(&[String::new()], &["a".into()]),
+            vec!["a".to_string()]
+        );
+    }
+
+    #[test]
+    fn accented_text_is_utf8() {
+        let batch = [Input::Text("á".into())];
+        assert_eq!(
+            interpret(&batch, false, false, false),
+            vec![Action::Write("á".as_bytes().to_vec())]
+        );
     }
 
     #[test]

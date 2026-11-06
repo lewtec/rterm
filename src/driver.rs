@@ -182,7 +182,12 @@ mod tests {
 
     #[test]
     fn tmux_quotes_session_name() {
-        let place = Place::new("ada", "remote.example", Backend::Tmux, Some("foo bar".into()));
+        let place = Place::new(
+            "ada",
+            "remote.example",
+            Backend::Tmux,
+            Some("foo bar".into()),
+        );
         assert_eq!(remote_command(&place), "tmux new-session -A -s 'foo bar'");
         assert_eq!(
             ssh_arguments(&place, None).last().map(String::as_str),

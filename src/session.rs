@@ -143,6 +143,16 @@ impl Session {
         self.parser.screen()
     }
 
+    pub fn scroll_by(&mut self, rows: i32) {
+        rterm::click::scroll_screen(self.parser.screen_mut(), rows);
+    }
+
+    pub fn reveal_live(&mut self) {
+        if self.parser.screen().scrollback() != 0 {
+            self.parser.screen_mut().set_scrollback(0);
+        }
+    }
+
     pub fn kitty_flags(&self) -> u16 {
         self.keyboard.flags()
     }

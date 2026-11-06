@@ -50,6 +50,8 @@ pub struct RtermApp {
     notch: Option<rterm::notch::FillSplit>,
     mac_fill: Option<crate::fill::Backup>,
     last_cell: Option<(u16, u16)>,
+    wheel_remainder: f32,
+    ime_terminal: bool,
     drag_from: Option<Uuid>,
     tab_rects: Vec<(Uuid, egui::Rect)>,
     paste: PasteRun,
@@ -68,6 +70,8 @@ impl RtermApp {
             notch: None,
             mac_fill: None,
             last_cell: None,
+            wheel_remainder: 0.0,
+            ime_terminal: false,
             drag_from: None,
             tab_rects: Vec::new(),
             paste: PasteRun {
@@ -198,6 +202,7 @@ impl RtermApp {
 
     fn write_place(&mut self, id: Uuid, bytes: &[u8]) {
         if let Some(session) = self.sessions.get_mut(&id) {
+            session.reveal_live();
             session.write(bytes);
         }
     }
@@ -320,11 +325,21 @@ impl RtermApp {
 
     fn handle_input(&mut self, ctx: &egui::Context) {
         let events = ctx.input(|input| input.events.clone());
+        // A commit replaces text events from the same frame. See `frame_text`.
+        let saw_commit = events.iter().any(|event| {
+            matches!(event, egui::Event::Ime(egui::ImeEvent::Commit(text)) if !text.is_empty())
+        });
         let mut batch = Vec::new();
         for event in events {
             match event {
-                egui::Event::Text(text) => batch.push(Input::Text(text)),
+                egui::Event::Ime(egui::ImeEvent::Commit(text)) if saw_commit => {
+                    batch.extend(keys::frame_text(&[text], &[]).into_iter().map(Input::Text));
+                }
+                egui::Event::Text(text) if !saw_commit => {
+                    batch.extend(keys::frame_text(&[], &[text]).into_iter().map(Input::Text));
+                }
                 egui::Event::Paste(text) => batch.push(Input::Pasted(text)),
+                egui::Event::Key { .. } if saw_commit => {}
                 egui::Event::Key {
                     key,
                     pressed,
@@ -363,6 +378,15 @@ impl RtermApp {
 impl eframe::App for RtermApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.notch = crate::fill::sync(self.fill, &mut self.mac_fill, frame);
+        let terminal_ime = self.store.editor.is_none();
+        if self.ime_terminal != terminal_ime {
+            self.ime_terminal = terminal_ime;
+            ctx.send_viewport_cmd(egui::ViewportCommand::IMEPurpose(if terminal_ime {
+                egui::IMEPurpose::Terminal
+            } else {
+                egui::IMEPurpose::Normal
+            }));
+        }
         self.pump();
         self.handle_input(ctx);
         self.tab_rects.clear();
@@ -398,28 +422,35 @@ impl RtermApp {
             egui::vec2(ui.available_width(), row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                if self.fill {
-                    self.traffic(ui);
-                }
                 let places = self.store.places.clone();
                 if let Some(split) = self.notch {
-                    let (leading, trailing) =
-                        rterm::notch::split(&places, split.left_cap, tab_width, 2.0);
-                    self.place_tabs(ui, &leading, split.left_cap as f32, "tabs-left", false);
+                    if self.fill {
+                        self.traffic(ui);
+                    }
+                    self.place_tabs(ui, &places, split.left_cap as f32, "tabs");
                     if split.notch_width > 0.5 {
                         ui.allocate_exact_size(
                             egui::vec2(split.notch_width as f32, row_h),
                             egui::Sense::hover(),
                         );
                     }
-                    self.place_tabs(ui, &trailing, split.right_cap as f32, "tabs-right", true);
+                    let rest = ui.available_width().max(0.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(rest, row_h),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| self.place_buttons(ui),
+                    );
                 } else {
-                    let width = (ui.available_width() - 120.0).max(0.0);
-                    self.place_tabs(ui, &places, width, "tabs", false);
-                }
-                ui.menu_button("Place", |ui| self.place_menu(ui));
-                if ui.button("+").on_hover_text("Add Place").clicked() {
-                    self.store.begin_add();
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.place_buttons(ui);
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            if self.fill {
+                                self.traffic(ui);
+                            }
+                            let width = ui.available_width().max(0.0);
+                            self.place_tabs(ui, &places, width, "tabs");
+                        });
+                    });
                 }
             },
         );
@@ -437,23 +468,16 @@ impl RtermApp {
         ui.separator();
     }
 
-    fn place_tabs(
-        &mut self,
-        ui: &mut egui::Ui,
-        places: &[Place],
-        cap: f32,
-        salt: &str,
-        align_right: bool,
-    ) {
-        let content: f32 = places
-            .iter()
-            .map(|place| tab_width(place) as f32 + 2.0)
-            .sum();
-        let cap = cap.max(0.0);
-        if align_right && content < cap {
-            ui.allocate_exact_size(egui::vec2(cap - content, 1.0), egui::Sense::hover());
+    fn place_buttons(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(8.0);
+        if ui.button("+").on_hover_text("Add Place").clicked() {
+            self.store.begin_add();
         }
-        let width = if align_right { content.min(cap) } else { cap };
+        ui.menu_button("Place", |ui| self.place_menu(ui));
+    }
+
+    fn place_tabs(&mut self, ui: &mut egui::Ui, places: &[Place], cap: f32, salt: &str) {
+        let width = cap.max(0.0);
         ui.allocate_ui_with_layout(
             egui::vec2(width, ui.available_height()),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -644,6 +668,9 @@ impl RtermApp {
             if let Some(session) = self.sessions.get_mut(&place.id) {
                 session.fit(rect.width(), rect.height(), char_w, char_h);
                 paint_screen(ui, rect, session.screen(), &font, char_w, char_h);
+                if self.store.editor.is_none() {
+                    mark_ime(ui, ime_cursor(rect, session.screen(), char_w, char_h));
+                }
                 self.pointer_pane(ui, &response, rect, place.id, char_w, char_h);
             }
             if let Some(progress) = self.store.connect_progress(place.id)
@@ -680,14 +707,13 @@ impl RtermApp {
         char_w: f32,
         char_h: f32,
     ) {
-        let Some(pos) =
-            ui.input(|input| input.pointer.hover_pos().or(input.pointer.interact_pos()))
-        else {
+        let pos = ui
+            .input(|input| input.pointer.hover_pos().or(input.pointer.interact_pos()))
+            .filter(|pos| rect.contains(*pos));
+        let Some(pos) = pos else {
+            self.wheel_remainder = 0.0;
             return;
         };
-        if !rect.contains(pos) {
-            return;
-        }
         let col = ((pos.x - rect.min.x) / char_w).floor().max(0.0) as u16;
         let row = ((pos.y - rect.min.y) / char_h).floor().max(0.0) as u16;
         let pressed = ui.input(|input| input.pointer.primary_pressed());
@@ -697,6 +723,15 @@ impl RtermApp {
         let Some(session) = self.sessions.get_mut(&place_id) else {
             return;
         };
+        wheel_pane(
+            &mut self.wheel_remainder,
+            ui,
+            session,
+            col,
+            row,
+            char_h,
+            rect.height(),
+        );
         let mode = session.screen().mouse_protocol_mode();
         let encoding = session.screen().mouse_protocol_encoding();
         if mode != vt100::MouseProtocolMode::None {
@@ -1018,13 +1053,116 @@ fn paint_screen(
             col += span;
         }
     }
-    let (cursor_row, cursor_col) = screen.cursor_position();
-    let cursor = rect.min + egui::vec2(cursor_col as f32 * char_w, cursor_row as f32 * char_h);
-    painter.rect_filled(
-        egui::Rect::from_min_size(cursor, egui::vec2(char_w, char_h)),
-        0.0,
-        egui::Color32::from_white_alpha(50),
-    );
+    if screen.scrollback() == 0 {
+        let (cursor_row, cursor_col) = screen.cursor_position();
+        let cursor = rect.min + egui::vec2(cursor_col as f32 * char_w, cursor_row as f32 * char_h);
+        painter.rect_filled(
+            egui::Rect::from_min_size(cursor, egui::vec2(char_w, char_h)),
+            0.0,
+            egui::Color32::from_white_alpha(50),
+        );
+    }
+}
+
+fn ime_cursor(rect: egui::Rect, screen: &vt100::Screen, char_w: f32, char_h: f32) -> egui::Rect {
+    let (row, col) = screen.cursor_position();
+    let origin = if screen.scrollback() == 0 {
+        rect.min + egui::vec2(col as f32 * char_w, row as f32 * char_h)
+    } else {
+        egui::pos2(rect.min.x, (rect.max.y - char_h).max(rect.min.y))
+    };
+    egui::Rect::from_min_size(origin, egui::vec2(char_w.max(1.0), char_h.max(1.0)))
+}
+
+fn mark_ime(ui: &egui::Ui, cursor: egui::Rect) {
+    let to_global = ui
+        .ctx()
+        .layer_transform_to_global(ui.layer_id())
+        .unwrap_or_default();
+    ui.ctx().output_mut(|output| {
+        output.ime = Some(egui::output::IMEOutput {
+            rect: to_global * cursor,
+            cursor_rect: to_global * cursor,
+        });
+    });
+}
+
+fn wheel_pane(
+    remainder: &mut f32,
+    ui: &egui::Ui,
+    session: &mut Session,
+    col: u16,
+    row: u16,
+    char_h: f32,
+    pane_h: f32,
+) {
+    let wheels: Vec<(egui::MouseWheelUnit, f32, bool)> = ui.input(|input| {
+        input
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                egui::Event::MouseWheel {
+                    unit,
+                    delta,
+                    modifiers,
+                } => Some((*unit, delta.y, modifiers.shift)),
+                _ => None,
+            })
+            .collect()
+    });
+    if wheels.is_empty() {
+        return;
+    }
+    let page_rows = if char_h > 0.0 {
+        (pane_h / char_h).max(1.0)
+    } else {
+        1.0
+    };
+    for (unit, delta_y, shift) in wheels {
+        let lines =
+            rterm::click::take_wheel_lines(remainder, wheel_unit(unit), delta_y, char_h, page_rows);
+        let mouse = session.screen().mouse_protocol_mode() != vt100::MouseProtocolMode::None;
+        let alternate = session.screen().alternate_screen();
+        let Some(action) = rterm::click::wheel_action(mouse, alternate, shift, lines) else {
+            continue;
+        };
+        match action {
+            rterm::click::WheelAction::Report { button, times } => {
+                let mode = session.screen().mouse_protocol_mode();
+                let encoding = session.screen().mouse_protocol_encoding();
+                for _ in 0..times {
+                    if let Some(bytes) = rterm::click::report(
+                        mode,
+                        encoding,
+                        rterm::click::Click::Press,
+                        button,
+                        col,
+                        row,
+                    ) {
+                        session.write(&bytes);
+                    }
+                }
+            }
+            rterm::click::WheelAction::Cursor { up, times } => {
+                let key = if up { NamedKey::Up } else { NamedKey::Down };
+                let app_cursor = session.screen().application_cursor();
+                if let Some(bytes) = keys::special_bytes(key, false, app_cursor) {
+                    for _ in 0..times {
+                        session.write(&bytes);
+                    }
+                }
+            }
+            rterm::click::WheelAction::Scroll(rows) => session.scroll_by(rows),
+        }
+    }
+}
+
+fn wheel_unit(unit: egui::MouseWheelUnit) -> rterm::click::WheelUnit {
+    match unit {
+        egui::MouseWheelUnit::Point => rterm::click::WheelUnit::Point,
+        egui::MouseWheelUnit::Line => rterm::click::WheelUnit::Line,
+        egui::MouseWheelUnit::Page => rterm::click::WheelUnit::Page,
+    }
 }
 
 fn color_of(color: vt100::Color, fallback: egui::Color32) -> egui::Color32 {
