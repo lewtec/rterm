@@ -36,9 +36,14 @@ fn main() -> ExitCode {
             None
         }
     };
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!(
+        "../Assets.xcassets/AppIcon.appiconset/icon_512x512.png"
+    ))
+    .expect("app icon png");
     let native = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("rterm")
+            .with_icon(std::sync::Arc::new(icon))
             .with_inner_size([960.0, 600.0])
             .with_min_inner_size([720.0, 420.0])
             // The tab row sits in the title bar, beside the traffic lights.

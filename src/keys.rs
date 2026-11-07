@@ -234,10 +234,10 @@ pub fn interpret_with(
             }
         }
     }
-    if let Some(text) = pasted.filter(|_| !saw_paste_key)
-        && !text.is_empty()
-    {
-        out.push(Action::Write(text.into_bytes()));
+    // macOS turns ⌘V into a paste event and does not also send the key.
+    // An empty paste is still the gesture: the clipboard may be an image.
+    if pasted.is_some() && !saw_paste_key {
+        out.push(Action::Paste(Gesture::CommandV));
     }
     out
 }
@@ -497,7 +497,12 @@ mod tests {
         let only = [Input::Pasted("hello".into())];
         assert_eq!(
             interpret(&only, false, false, false),
-            vec![Action::Write(b"hello".to_vec())]
+            vec![Action::Paste(Gesture::CommandV)]
+        );
+        let image = [Input::Pasted(String::new())];
+        assert_eq!(
+            interpret(&image, false, false, false),
+            vec![Action::Paste(Gesture::CommandV)]
         );
     }
 }

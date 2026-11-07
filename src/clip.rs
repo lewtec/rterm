@@ -16,11 +16,15 @@ pub struct Snapshot {
 pub fn snapshot() -> Snapshot {
     let mut text = String::new();
     let mut png = Vec::new();
+    if let Some(bytes) = png_from_pasteboard() {
+        png = bytes;
+    }
     if let Ok(mut clipboard) = arboard::Clipboard::new() {
         if let Ok(value) = clipboard.get_text() {
             text = value;
         }
-        if let Ok(image) = clipboard.get_image()
+        if png.is_empty()
+            && let Ok(image) = clipboard.get_image()
             && let Some(encoded) = encode_png(image.bytes.as_ref(), image.width, image.height)
         {
             png = encoded;
@@ -66,6 +70,35 @@ pub fn encode_png(rgba: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
         )
         .ok()?;
     Some(png)
+}
+
+fn png_from_pasteboard() -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos_png();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_png() -> Option<Vec<u8>> {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypePNG};
+    use std::ptr::NonNull;
+    unsafe {
+        let board = NSPasteboard::generalPasteboard();
+        let data = board.dataForType(NSPasteboardTypePNG)?;
+        let len = data.length() as usize;
+        if len == 0 || len > rterm::paste::MAX_BYTES {
+            return None;
+        }
+        let mut buf = vec![0u8; len];
+        let ptr = NonNull::new(buf.as_mut_ptr().cast())?;
+        data.getBytes_length(ptr, len as _);
+        buf.starts_with(b"\x89PNG").then_some(buf)
+    }
 }
 
 fn png_from_commands() -> Option<Vec<u8>> {
