@@ -1,4 +1,5 @@
 mod app_icon;
+mod appearance;
 mod clip;
 mod fill;
 mod gui;

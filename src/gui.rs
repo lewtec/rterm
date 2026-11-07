@@ -54,6 +54,10 @@ pub struct RtermApp {
     ime_terminal: bool,
     drag_from: Option<Uuid>,
     tab_rects: Vec<(Uuid, egui::Rect)>,
+    appearance: crate::appearance::Appearance,
+    faces: Vec<crate::appearance::Face>,
+    applied_font: Option<String>,
+    settings_open: bool,
     paste: PasteRun,
     paste_token: u64,
     lock: Option<std::fs::File>,
@@ -74,6 +78,10 @@ impl RtermApp {
             ime_terminal: false,
             drag_from: None,
             tab_rects: Vec::new(),
+            appearance: crate::appearance::load(&crate::appearance::path()),
+            faces: crate::appearance::faces(),
+            applied_font: None,
+            settings_open: false,
             paste: PasteRun {
                 place_id: Uuid::nil(),
                 generation: 0,
@@ -265,7 +273,7 @@ impl RtermApp {
         for action in actions {
             match action {
                 Action::Write(bytes) => self.write_selected(&bytes),
-                Action::AddPlace => self.store.begin_add(),
+                Action::AddPlace => self.start_add(),
                 Action::Reconnect => self.store.reconnect_selected(),
                 Action::SelectIndex(index) => self.store.select_place_at(index),
                 Action::ToggleFill => self.toggle_fill(ctx),
@@ -275,7 +283,10 @@ impl RtermApp {
                         self.toggle_fill(ctx);
                     }
                 }
-                Action::CloseEditor => self.store.editor = None,
+                Action::CloseEditor => {
+                    self.store.editor = None;
+                    self.settings_open = false;
+                }
                 Action::SaveEditor => {
                     if self.store.editor.as_ref().is_some_and(can_save) {
                         self.store.save_editor();
@@ -363,10 +374,11 @@ impl RtermApp {
             }
         }
         let (kitty_flags, app_cursor) = self.terminal_mode();
+        let sheet_open = self.store.editor.is_some() || self.settings_open;
         let actions = keys::interpret_with(
             &batch,
             self.fill,
-            self.store.editor.is_some(),
+            sheet_open,
             ctx.wants_keyboard_input(),
             kitty_flags,
             app_cursor,
@@ -378,7 +390,9 @@ impl RtermApp {
 impl eframe::App for RtermApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.notch = crate::fill::sync(self.fill, &mut self.mac_fill, frame);
-        let terminal_ime = self.store.editor.is_none();
+        self.ensure_font(ctx);
+        let sheet_open = self.store.editor.is_some() || self.settings_open;
+        let terminal_ime = !sheet_open;
         if self.ime_terminal != terminal_ime {
             self.ime_terminal = terminal_ime;
             ctx.send_viewport_cmd(egui::ViewportCommand::IMEPurpose(if terminal_ime {
@@ -390,7 +404,7 @@ impl eframe::App for RtermApp {
         self.pump();
         crate::app_icon::install();
         crate::mac_paste::install();
-        crate::mac_paste::set_editor_open(self.store.editor.is_some());
+        crate::mac_paste::set_editor_open(sheet_open);
         if crate::mac_paste::take_command_v() {
             self.do_paste(rterm::paste::Gesture::CommandV);
         }
@@ -407,6 +421,8 @@ impl eframe::App for RtermApp {
                 self.pane(ui);
             });
         self.editor_window(ctx);
+        self.settings_window(ctx);
+        self.ensure_font(ctx);
         self.sync_sessions();
         if self.paste.rx.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
@@ -448,11 +464,15 @@ impl RtermApp {
                     ui.allocate_ui_with_layout(
                         egui::vec2(rest, row_h),
                         egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| add_rect = self.add_button(ui),
+                        |ui| {
+                            add_rect = self.add_button(ui);
+                            self.settings_button(ui);
+                        },
                     );
                 } else {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         add_rect = self.add_button(ui);
+                        self.settings_button(ui);
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             if self.fill {
                                 self.traffic(ui);
@@ -503,7 +523,7 @@ impl RtermApp {
             ui.visuals().text_color(),
         );
         if response.clicked() {
-            self.store.begin_add();
+            self.start_add();
         }
         response.clone().on_hover_text("Add Place");
         response.context_menu(|ui| self.place_menu(ui));
@@ -564,7 +584,7 @@ impl RtermApp {
 
     fn place_menu(&mut self, ui: &mut egui::Ui) {
         if ui.button("Add Place…").clicked() {
-            self.store.begin_add();
+            self.start_add();
             ui.close_menu();
         }
         if ui
@@ -649,6 +669,7 @@ impl RtermApp {
                 ui.close_menu();
             }
             if ui.button("Edit").clicked() {
+                self.settings_open = false;
                 self.store.begin_edit(&place);
                 ui.close_menu();
             }
@@ -694,7 +715,7 @@ impl RtermApp {
             .get(&place.id)
             .is_some_and(|attach| attach.shows_pane());
         if show {
-            let font = egui::FontId::monospace(14.0);
+            let font = self.terminal_font();
             let galley = ui.ctx().fonts(|fonts| {
                 fonts.layout_no_wrap("M".to_owned(), font.clone(), egui::Color32::WHITE)
             });
@@ -804,6 +825,49 @@ impl RtermApp {
         }
     }
 
+    fn start_add(&mut self) {
+        self.settings_open = false;
+        self.store.begin_add();
+    }
+
+    fn settings_button(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(4.0);
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), pointer_sense(false));
+        let color = if self.settings_open {
+            ACCENT
+        } else {
+            ui.visuals().text_color()
+        };
+        paint_wrench(ui.painter(), rect, color);
+        if response.clicked() {
+            self.settings_open = !self.settings_open;
+            if self.settings_open {
+                self.store.editor = None;
+            }
+        }
+        response.on_hover_text("Settings");
+    }
+
+    fn terminal_font(&self) -> egui::FontId {
+        egui::FontId::monospace(self.appearance.size)
+    }
+
+    fn ensure_font(&mut self, ctx: &egui::Context) {
+        if self.applied_font.as_deref() == Some(self.appearance.font.as_str()) {
+            return;
+        }
+        crate::appearance::apply(ctx, &self.appearance.font, &self.faces);
+        self.applied_font = Some(self.appearance.font.clone());
+    }
+
+    fn store_appearance(&mut self) {
+        self.appearance.size = crate::appearance::clamp(self.appearance.size);
+        if self.appearance.font.trim().is_empty() {
+            self.appearance.font = crate::appearance::BUILT_IN.into();
+        }
+        let _ = crate::appearance::save(&crate::appearance::path(), &self.appearance);
+    }
+
     fn editor_window(&mut self, ctx: &egui::Context) {
         let Some(mut editor) = self.store.editor.clone() else {
             return;
@@ -816,46 +880,67 @@ impl RtermApp {
         let mut open = true;
         let mut dismiss = false;
         let directory = self.store.places_directory().display().to_string();
-        egui::Window::new(title)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.set_min_width(420.0);
-                ui.label("User");
-                ui.text_edit_singleline(&mut editor.user);
-                ui.label("Host");
-                ui.text_edit_singleline(&mut editor.host);
-                egui::ComboBox::from_label("Backend")
-                    .selected_text(editor.backend.as_str())
-                    .show_ui(ui, |ui| {
+        let mut saved = false;
+        sheet(ctx, "place-editor", &mut open, |ui| {
+            ui.set_min_width(420.0);
+            ui.label(egui::RichText::new(title).size(18.0));
+            ui.label(egui::RichText::new("Where this tab connects.").weak());
+            ui.add_space(8.0);
+            egui::Grid::new("place-fields")
+                .num_columns(2)
+                .spacing(egui::vec2(12.0, 8.0))
+                .show(ui, |ui| {
+                    let hint = user_hint(&editor);
+                    place_field(ui, "User", &mut editor.user, hint);
+                    place_field(ui, "Host", &mut editor.host, "empty is this machine");
+                    ui.label("Backend");
+                    ui.horizontal(|ui| {
                         for backend in Backend::ALL {
-                            ui.selectable_value(&mut editor.backend, backend, backend.as_str());
+                            ui.selectable_value(
+                                &mut editor.backend,
+                                backend,
+                                backend_name(backend),
+                            );
                         }
                     });
-                if editor.backend != Backend::Herdr {
-                    ui.label("Session");
-                    ui.text_edit_singleline(&mut editor.session);
-                }
-                ui.label("Label");
-                ui.text_edit_singleline(&mut editor.label);
-                ui.label(directory);
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        dismiss = true;
+                    ui.end_row();
+                    if editor.backend != Backend::Herdr {
+                        place_field(ui, "Session", &mut editor.session, "session name");
                     }
-                    if ui
-                        .add_enabled(can_save(&editor), egui::Button::new("Save"))
-                        .clicked()
-                    {
-                        self.store.editor = Some(editor.clone());
-                        self.store.save_editor();
-                    }
+                    place_field(ui, "Label", &mut editor.label, "optional, shown on the tab");
                 });
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(backend_hint(editor.backend))
+                    .small()
+                    .weak(),
+            );
+            ui.add(
+                egui::Label::new(egui::RichText::new(directory).small().weak()).selectable(true),
+            );
+            ui.add_space(8.0);
+            if let Some(issue) = save_issue(&editor) {
+                ui.label(egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)));
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add_enabled(can_save(&editor), egui::Button::new("Save").fill(ACCENT))
+                    .clicked()
+                {
+                    saved = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    dismiss = true;
+                }
             });
+        });
         if dismiss {
             open = false;
+        }
+        if saved {
+            self.store.editor = Some(editor);
+            self.store.save_editor();
+            return;
         }
         if self.store.editor.is_some() {
             if open {
@@ -865,18 +950,167 @@ impl RtermApp {
             }
         }
     }
+
+    fn settings_window(&mut self, ctx: &egui::Context) {
+        if !self.settings_open {
+            return;
+        }
+        let mut open = true;
+        let mut done = false;
+        let size = self.appearance.size;
+        let current = self.appearance.font.clone();
+        let names: Vec<String> = self.faces.iter().map(|face| face.name.clone()).collect();
+        let mut next_size = None;
+        let mut next_font = None;
+        sheet(ctx, "settings", &mut open, |ui| {
+            ui.set_min_width(360.0);
+            ui.label(egui::RichText::new("Settings").size(18.0));
+            ui.add_space(10.0);
+            ui.label("Font");
+            let shown = if current == crate::appearance::BUILT_IN {
+                crate::appearance::BUILT_IN
+            } else {
+                current.as_str()
+            };
+            egui::ComboBox::from_id_salt("terminal-font")
+                .selected_text(shown)
+                .width(260.0)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(current == crate::appearance::BUILT_IN, "Built-in")
+                        .clicked()
+                    {
+                        next_font = Some(crate::appearance::BUILT_IN.to_string());
+                    }
+                    for name in &names {
+                        if ui.selectable_label(current == *name, name).clicked() {
+                            next_font = Some(name.clone());
+                        }
+                    }
+                });
+            ui.add_space(8.0);
+            ui.label("Size");
+            ui.horizontal(|ui| {
+                if ui.button("−").on_hover_text("Smaller").clicked() {
+                    next_size = Some(size - 1.0);
+                }
+                ui.monospace(format!("{size:.0}"));
+                if ui.button("+").on_hover_text("Larger").clicked() {
+                    next_size = Some(size + 1.0);
+                }
+            });
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("rterm — the quick brown fox")
+                    .font(egui::FontId::monospace(size)),
+            );
+            ui.add_space(12.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Done").clicked() {
+                    done = true;
+                }
+            });
+        });
+        if let Some(size) = next_size {
+            self.appearance.size = size;
+            self.store_appearance();
+        }
+        if let Some(font) = next_font {
+            self.appearance.font = font;
+            self.store_appearance();
+        }
+        if done {
+            open = false;
+        }
+        if !open {
+            self.settings_open = false;
+        }
+    }
 }
 
-fn can_save(editor: &PlaceEditorState) -> bool {
+const ACCENT: egui::Color32 = egui::Color32::from_rgb(80, 140, 220);
+
+fn sheet(ctx: &egui::Context, id: &str, open: &mut bool, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Window::new(id)
+        .title_bar(false)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .frame(egui::Frame::window(&ctx.style()).inner_margin(16))
+        .open(open)
+        .show(ctx, add);
+}
+
+fn place_field(ui: &mut egui::Ui, label: &str, text: &mut String, hint: &str) {
+    ui.label(label);
+    ui.add(
+        egui::TextEdit::singleline(text)
+            .hint_text(hint)
+            .desired_width(260.0)
+            .id(egui::Id::new(label)),
+    );
+    ui.end_row();
+}
+
+fn user_hint(editor: &PlaceEditorState) -> &'static str {
+    if Place::is_loopback_host(&editor.host) {
+        "defaults to you"
+    } else {
+        "required"
+    }
+}
+
+fn backend_name(backend: Backend) -> &'static str {
+    match backend {
+        Backend::Herdr => "Herdr",
+        Backend::Tmux => "tmux",
+        Backend::Screen => "screen",
+    }
+}
+
+fn backend_hint(backend: Backend) -> &'static str {
+    match backend {
+        Backend::Herdr => "Herdr attaches directly. It does not use a session name.",
+        Backend::Tmux => "Attaches to a tmux session on that machine.",
+        Backend::Screen => "Attaches to a screen session on that machine.",
+    }
+}
+
+fn save_issue(editor: &PlaceEditorState) -> Option<&'static str> {
     let user = editor.user.trim();
     let host = editor.host.trim();
     if !Place::is_loopback_host(host) && user.is_empty() {
-        return false;
+        return Some("A remote host needs a user.");
     }
-    if editor.backend != Backend::Herdr && editor.session.trim().is_empty() {
-        return false;
+    match editor.backend {
+        Backend::Herdr => None,
+        Backend::Tmux if editor.session.trim().is_empty() => Some("tmux needs a session name."),
+        Backend::Screen if editor.session.trim().is_empty() => Some("screen needs a session name."),
+        Backend::Tmux | Backend::Screen => None,
     }
-    true
+}
+
+fn can_save(editor: &PlaceEditorState) -> bool {
+    save_issue(editor).is_none()
+}
+
+fn paint_wrench(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    let stroke = egui::Stroke::new(1.6, color);
+    let center = rect.center();
+    let head = center + egui::vec2(-2.0, -4.0);
+    painter.circle_stroke(head, 3.3, stroke);
+    painter.line_segment(
+        [head + egui::vec2(1.8, -2.4), head + egui::vec2(4.6, -4.8)],
+        stroke,
+    );
+    painter.line_segment(
+        [head + egui::vec2(2.6, -0.4), head + egui::vec2(5.0, -2.4)],
+        stroke,
+    );
+    painter.line_segment(
+        [head + egui::vec2(1.6, 2.2), center + egui::vec2(5.2, 6.2)],
+        egui::Stroke::new(2.3, color),
+    );
 }
 
 /// Clicks and drags stay on the pointer. Tab and Enter belong to the terminal.
@@ -1265,9 +1499,9 @@ mod tests {
             session: String::new(),
             label: String::new(),
         };
-        assert!(!can_save(&editor));
+        assert_eq!(save_issue(&editor), Some("A remote host needs a user."));
         editor.user = "ada".into();
-        assert!(!can_save(&editor));
+        assert_eq!(save_issue(&editor), Some("tmux needs a session name."));
         editor.session = "dev".into();
         assert!(can_save(&editor));
         editor.host.clear();
