@@ -4,24 +4,26 @@
 version: 2
 project_name: rterm
 
-# Rust builder defaults (GoReleaser 2.18):
-# command zigbuild, targets
-#   x86_64-unknown-linux-gnu
-#   aarch64-unknown-linux-gnu
-#   x86_64-apple-darwin
-#   aarch64-apple-darwin
-#   x86_64-pc-windows-gnu
-# zig and cargo-zigbuild come from mise.toml.
+# Same matrix as refactree-rs. The default command is cargo zigbuild.
+# Darwin still needs an Apple SDK; zig does not ship one.
 before:
   hooks:
     - bash scripts/macos-sdk.sh
 
 builds:
-  - builder: rust
+  - id: rterm
+    builder: rust
     binary: rterm
     flags:
-      - --release
       - --locked
+      - --release
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
+      - x86_64-pc-windows-gnu
+      - aarch64-pc-windows-gnullvm
     env:
       - RTERM_VERSION={{ .Version }}
       - >-
@@ -35,9 +37,6 @@ builds:
 
 archives:
   - formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
@@ -45,10 +44,16 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
 
 changelog:
   sort: asc

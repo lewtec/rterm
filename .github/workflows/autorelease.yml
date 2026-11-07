@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - main
-    # Do not trigger on tags: the release job pushes a tag, which would
-    # re-enter this workflow and mint another version.
+    tags:
+      - "*"
   pull_request:
     branches:
       - main
@@ -16,60 +16,21 @@ on:
         type: choice
         default: "patch"
         options:
-          - next
           - patch
           - minor
           - major
   schedule:
     - cron: "0 2 * * 6" # saturday 2am
 
-# CI runs on Ubuntu. A dispatch release lets GoReleaser build every default
-# Rust target under one svu tag. It does not call `mise release` (that tags twice).
 jobs:
-  ci:
-    if: github.event_name != 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5
-
-      - name: CI
-        run: mise run ci
-
-  version:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.svu.outputs.tag }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5
-
-      - name: Compute tag
-        id: svu
-        env:
-          NEW_VERSION: ${{ github.event.inputs.new_version }}
-        run: |
-          set -euo pipefail
-          TAG="$(svu "$NEW_VERSION")"
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "Tag $TAG already exists" >&2
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Releasing $TAG"
-
-  release:
-    needs: version
-    if: github.event_name == 'workflow_dispatch'
+  autorelease:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
+      attestations: write
+      id-token: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -83,15 +44,37 @@ jobs:
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5
 
-      - name: Publish
+      - name: Install
+        run: mise run install
+
+      - name: Create Pull Request if there is new stuff from updaters
+        if: github.event_name != 'pull_request'
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
+        id: pr_create
+        with:
+          commit-message: Updater script changes
+          branch: updater-bot
+          delete-branch: true
+          title: "Bot: automated changes"
+          body: |
+            Changes caused from update scripts
+
+      - name: Stop if a pull request was created
+        if: github.event_name != 'pull_request'
         env:
-          TAG: ${{ needs.version.outputs.tag }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr_create.outputs.pull-request-number }}
         run: |
-          set -euo pipefail
-          git tag "$TAG"
-          if ! goreleaser release --clean; then
-            git tag -d "$TAG"
+          if [[ -n "$PR_NUMBER" ]]; then
+            echo "The update scripts changed something and a PR was created. Giving up deploy." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          git push origin "refs/tags/$TAG"
+
+      - name: CI
+        run: mise run ci
+
+      - name: Release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ github.event.inputs.new_version }}
+        run: mise release "$NEW_VERSION"
