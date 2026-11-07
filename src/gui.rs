@@ -494,7 +494,7 @@ impl RtermApp {
 
     fn add_button(&mut self, ui: &mut egui::Ui) -> egui::Rect {
         ui.add_space(8.0);
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), pointer_sense(false));
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -521,6 +521,7 @@ impl RtermApp {
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
                     )
+                    .drag_to_scroll(false)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             for place in places {
@@ -613,7 +614,7 @@ impl RtermApp {
         };
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(tab_width(place) as f32, 22.0),
-            egui::Sense::click_and_drag(),
+            pointer_sense(true),
         );
         self.tab_rects.push((place.id, rect));
         ui.painter().rect_filled(rect, 10.0, fill);
@@ -674,7 +675,7 @@ impl RtermApp {
         let rect = ui.available_rect_before_wrap();
         ui.painter()
             .rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 18, 18));
-        let response = ui.allocate_rect(rect, egui::Sense::click());
+        let response = ui.allocate_rect(rect, pointer_sense(false));
         if self.store.places.is_empty() {
             center_text(ui, rect, "No places", "Add a place to attach later.");
             return;
@@ -878,6 +879,15 @@ fn can_save(editor: &PlaceEditorState) -> bool {
     true
 }
 
+/// Clicks and drags stay on the pointer. Tab and Enter belong to the terminal.
+fn pointer_sense(drag: bool) -> egui::Sense {
+    if drag {
+        egui::Sense::CLICK | egui::Sense::DRAG
+    } else {
+        egui::Sense::CLICK
+    }
+}
+
 fn tab_width(place: &Place) -> f64 {
     keys::estimated_tab_width(&place.display_label())
 }
@@ -939,7 +949,7 @@ fn named_key(key: egui::Key) -> Option<NamedKey> {
 }
 
 fn dot(ui: &mut egui::Ui, color: egui::Color32) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), pointer_sense(false));
     ui.painter().circle_filled(rect.center(), 6.0, color);
     response
 }
@@ -982,7 +992,7 @@ fn center_text(ui: &egui::Ui, rect: egui::Rect, title: &str, body: &str) {
 }
 
 fn failure_overlay(ui: &mut egui::Ui, rect: egui::Rect, message: &str) -> egui::Response {
-    let response = ui.interact(rect, ui.id().with(message), egui::Sense::click());
+    let response = ui.interact(rect, ui.id().with(message), pointer_sense(false));
     ui.painter()
         .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(180));
     ui.painter().text(
