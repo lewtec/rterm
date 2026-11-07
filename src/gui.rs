@@ -390,13 +390,16 @@ impl eframe::App for RtermApp {
         self.pump();
         self.handle_input(ctx);
         self.tab_rects.clear();
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.chrome(ui);
-            if let Some(message) = self.store.catalog_error.clone() {
-                self.banner(ui, &message);
-            }
-            self.pane(ui);
-        });
+        let panel = ctx.style().visuals.panel_fill;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(panel))
+            .show(ctx, |ui| {
+                self.chrome(ui);
+                if let Some(message) = self.store.catalog_error.clone() {
+                    self.banner(ui, &message);
+                }
+                self.pane(ui);
+            });
         self.editor_window(ctx);
         self.sync_sessions();
         if self.paste.rx.is_some() {
@@ -417,7 +420,8 @@ impl RtermApp {
         let bar = ui.available_rect_before_wrap();
         let chrome_rect = egui::Rect::from_min_size(bar.min, egui::vec2(bar.width(), row_h));
         ui.painter()
-            .rect_filled(chrome_rect, 0.0, egui::Color32::from_rgb(36, 36, 38));
+            .rect_filled(chrome_rect, 0.0, ui.visuals().panel_fill);
+        let mut add_rect = egui::Rect::NOTHING;
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), row_h),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -438,14 +442,16 @@ impl RtermApp {
                     ui.allocate_ui_with_layout(
                         egui::vec2(rest, row_h),
                         egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| self.place_buttons(ui),
+                        |ui| add_rect = self.add_button(ui),
                     );
                 } else {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.place_buttons(ui);
+                        add_rect = self.add_button(ui);
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             if self.fill {
                                 self.traffic(ui);
+                            } else if cfg!(target_os = "macos") {
+                                ui.add_space(TRAFFIC_WIDTH);
                             }
                             let width = ui.available_width().max(0.0);
                             self.place_tabs(ui, &places, width, "tabs");
@@ -454,6 +460,19 @@ impl RtermApp {
                 }
             },
         );
+        ui.painter().hline(
+            chrome_rect.x_range(),
+            chrome_rect.bottom() - 0.5,
+            ui.visuals().widgets.noninteractive.bg_stroke,
+        );
+        if ui.input(|input| input.pointer.primary_pressed())
+            && let Some(pos) = ui.input(|input| input.pointer.interact_pos())
+            && chrome_rect.contains(pos)
+            && !add_rect.contains(pos)
+            && !self.tab_rects.iter().any(|(_, rect)| rect.contains(pos))
+        {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
         if ui.input(|input| input.pointer.any_released())
             && let Some(from) = self.drag_from.take()
             && let Some(pos) = ui.input(|input| input.pointer.interact_pos())
@@ -465,15 +484,24 @@ impl RtermApp {
         {
             self.store.move_place(from, onto);
         }
-        ui.separator();
     }
 
-    fn place_buttons(&mut self, ui: &mut egui::Ui) {
+    fn add_button(&mut self, ui: &mut egui::Ui) -> egui::Rect {
         ui.add_space(8.0);
-        if ui.button("+").on_hover_text("Add Place").clicked() {
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "+",
+            egui::FontId::proportional(18.0),
+            ui.visuals().text_color(),
+        );
+        if response.clicked() {
             self.store.begin_add();
         }
-        ui.menu_button("Place", |ui| self.place_menu(ui));
+        response.clone().on_hover_text("Add Place");
+        response.context_menu(|ui| self.place_menu(ui));
+        rect
     }
 
     fn place_tabs(&mut self, ui: &mut egui::Ui, places: &[Place], cap: f32, salt: &str) {
@@ -598,7 +626,7 @@ impl RtermApp {
             egui::Align2::LEFT_CENTER,
             place.display_label(),
             egui::FontId::proportional(13.0),
-            egui::Color32::WHITE,
+            ui.visuals().text_color(),
         );
         response.clone().on_hover_text(place.display_label());
         if response.clicked() {

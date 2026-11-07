@@ -40,7 +40,11 @@ fn main() -> ExitCode {
         viewport: egui::ViewportBuilder::default()
             .with_title("rterm")
             .with_inner_size([960.0, 600.0])
-            .with_min_inner_size([720.0, 420.0]),
+            .with_min_inner_size([720.0, 420.0])
+            // The tab row sits in the title bar, beside the traffic lights.
+            .with_fullsize_content_view(true)
+            .with_title_shown(false)
+            .with_titlebar_shown(false),
         persist_window: true,
         persistence_path: Some(paths::caches_directory()),
         ..Default::default()
