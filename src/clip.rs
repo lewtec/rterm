@@ -101,6 +101,84 @@ fn macos_snapshot() -> Snapshot {
     }
 }
 
+pub fn set_text(text: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        macos_set_text(text);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        other_set_text(text);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_set_text(text: &str) {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    use objc2_foundation::NSString;
+    unsafe {
+        let board = NSPasteboard::generalPasteboard();
+        let _ = board.clearContents();
+        if text.is_empty() {
+            return;
+        }
+        let value = NSString::from_str(text);
+        let _ = board.setString_forType(&value, NSPasteboardTypeString);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn other_set_text(text: &str) {
+    if let Ok(mut clipboard) = arboard::Clipboard::new()
+        && clipboard.set_text(text).is_ok()
+    {
+        return;
+    }
+    let bytes = text.as_bytes();
+    for (program, args) in [
+        ("wl-copy", &["--type", "text/plain"][..]),
+        ("xclip", &["-selection", "clipboard"][..]),
+    ] {
+        if write_timeout(program, args, bytes) {
+            return;
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn write_timeout(program: &str, args: &[&str], bytes: &[u8]) -> bool {
+    let mut child = match Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    let Some(mut stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return false;
+    };
+    let payload = bytes.to_vec();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let wrote = stdin.write_all(&payload).is_ok();
+        drop(stdin);
+        if !wrote {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = tx.send(false);
+            return;
+        }
+        let ok = child.wait().ok().is_some_and(|status| status.success());
+        let _ = tx.send(ok);
+    });
+    rx.recv_timeout(Duration::from_millis(800)).unwrap_or(false)
+}
+
 pub fn beep() {
     if let Ok(mut tty) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
         let _ = tty.write_all(b"\x07");

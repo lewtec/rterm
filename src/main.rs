@@ -4,6 +4,7 @@ mod fill;
 mod gui;
 mod keys;
 mod mac_paste;
+mod osc52;
 mod session;
 mod sleep_watch;
 
@@ -38,7 +39,7 @@ fn main() -> ExitCode {
             None
         }
     };
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!(
+    let icon = crate::app_icon::icon_data(include_bytes!(
         "../Assets.xcassets/AppIcon.appiconset/icon_512x512.png"
     ))
     .expect("app icon png");
