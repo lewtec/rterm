@@ -1,6 +1,9 @@
 use std::io::Write;
+#[cfg(not(target_os = "macos"))]
 use std::process::{Command, Stdio};
+#[cfg(not(target_os = "macos"))]
 use std::sync::mpsc;
+#[cfg(not(target_os = "macos"))]
 use std::time::Duration;
 
 use image::codecs::png::PngEncoder;
@@ -14,17 +17,34 @@ pub struct Snapshot {
 }
 
 pub fn snapshot() -> Snapshot {
+    #[cfg(target_os = "macos")]
+    {
+        macos_snapshot()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        other_snapshot()
+    }
+}
+
+fn finish(text: String, png: Vec<u8>) -> Snapshot {
+    Snapshot {
+        has_image: !png.is_empty(),
+        has_text: !text.is_empty(),
+        png,
+        text,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn other_snapshot() -> Snapshot {
     let mut text = String::new();
     let mut png = Vec::new();
-    if let Some(bytes) = png_from_pasteboard() {
-        png = bytes;
-    }
     if let Ok(mut clipboard) = arboard::Clipboard::new() {
         if let Ok(value) = clipboard.get_text() {
             text = value;
         }
-        if png.is_empty()
-            && let Ok(image) = clipboard.get_image()
+        if let Ok(image) = clipboard.get_image()
             && let Some(encoded) = encode_png(image.bytes.as_ref(), image.width, image.height)
         {
             png = encoded;
@@ -41,11 +61,43 @@ pub fn snapshot() -> Snapshot {
     {
         text = value;
     }
-    Snapshot {
-        has_image: !png.is_empty(),
-        has_text: !text.is_empty(),
-        png,
-        text,
+    finish(text, png)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_snapshot() -> Snapshot {
+    use objc2::ClassType;
+    use objc2_app_kit::{
+        NSImage, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString, NSPasteboardTypeTIFF,
+    };
+    unsafe {
+        let board = NSPasteboard::generalPasteboard();
+        let text = board
+            .stringForType(NSPasteboardTypeString)
+            .as_deref()
+            .map(ns_string)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let png = board
+            .dataForType(NSPasteboardTypePNG)
+            .as_deref()
+            .and_then(nsdata_vec)
+            .filter(|bytes| bytes.starts_with(b"\x89PNG"))
+            .or_else(|| {
+                board
+                    .dataForType(NSPasteboardTypeTIFF)
+                    .as_deref()
+                    .and_then(tiff_png)
+            })
+            .or_else(|| {
+                NSImage::initWithPasteboard(NSImage::alloc(), &board)
+                    .and_then(|image| image.TIFFRepresentation())
+                    .as_deref()
+                    .and_then(tiff_png)
+            })
+            .unwrap_or_default();
+        finish(text, png)
     }
 }
 
@@ -72,35 +124,39 @@ pub fn encode_png(rgba: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
     Some(png)
 }
 
-fn png_from_pasteboard() -> Option<Vec<u8>> {
-    #[cfg(target_os = "macos")]
-    {
-        return macos_png();
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        None
+#[cfg(target_os = "macos")]
+fn ns_string(value: &objc2_foundation::NSString) -> String {
+    unsafe {
+        let ptr = value.UTF8String();
+        if ptr.is_null() {
+            return String::new();
+        }
+        std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
     }
 }
 
 #[cfg(target_os = "macos")]
-fn macos_png() -> Option<Vec<u8>> {
-    use objc2_app_kit::{NSPasteboard, NSPasteboardTypePNG};
+fn nsdata_vec(data: &objc2_foundation::NSData) -> Option<Vec<u8>> {
     use std::ptr::NonNull;
-    unsafe {
-        let board = NSPasteboard::generalPasteboard();
-        let data = board.dataForType(NSPasteboardTypePNG)?;
-        let len = data.length() as usize;
-        if len == 0 || len > rterm::paste::MAX_BYTES {
-            return None;
-        }
-        let mut buf = vec![0u8; len];
-        let ptr = NonNull::new(buf.as_mut_ptr().cast())?;
-        data.getBytes_length(ptr, len as _);
-        buf.starts_with(b"\x89PNG").then_some(buf)
+    let len = data.length() as usize;
+    if len == 0 || len > rterm::paste::MAX_BYTES {
+        return None;
     }
+    let mut buf = vec![0u8; len];
+    let ptr = NonNull::new(buf.as_mut_ptr().cast())?;
+    unsafe { data.getBytes_length(ptr, len as _) };
+    Some(buf)
 }
 
+#[cfg(target_os = "macos")]
+fn tiff_png(data: &objc2_foundation::NSData) -> Option<Vec<u8>> {
+    let bytes = nsdata_vec(data)?;
+    let image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Tiff).ok()?;
+    let rgba = image.into_rgba8();
+    encode_png(rgba.as_raw(), rgba.width() as usize, rgba.height() as usize)
+}
+
+#[cfg(not(target_os = "macos"))]
 fn png_from_commands() -> Option<Vec<u8>> {
     for (program, args) in [
         ("wl-paste", &["--no-newline", "-t", "image/png"][..]),
@@ -118,6 +174,7 @@ fn png_from_commands() -> Option<Vec<u8>> {
     None
 }
 
+#[cfg(not(target_os = "macos"))]
 fn text_from_commands() -> Option<Vec<u8>> {
     for (program, args) in [
         ("wl-paste", &["--no-newline", "-t", "text"][..]),
@@ -130,6 +187,7 @@ fn text_from_commands() -> Option<Vec<u8>> {
     None
 }
 
+#[cfg(not(target_os = "macos"))]
 fn output_timeout(program: &str, args: &[&str]) -> Option<Vec<u8>> {
     let mut child = Command::new(program)
         .args(args)

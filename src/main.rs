@@ -1,7 +1,9 @@
+mod app_icon;
 mod clip;
 mod fill;
 mod gui;
 mod keys;
+mod mac_paste;
 mod session;
 mod sleep_watch;
 

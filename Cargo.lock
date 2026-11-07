@@ -2063,6 +2063,7 @@ name = "rterm"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "block2",
  "eframe",
  "image",
  "notify",

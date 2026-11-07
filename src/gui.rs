@@ -388,6 +388,12 @@ impl eframe::App for RtermApp {
             }));
         }
         self.pump();
+        crate::app_icon::install();
+        crate::mac_paste::install();
+        crate::mac_paste::set_editor_open(self.store.editor.is_some());
+        if crate::mac_paste::take_command_v() {
+            self.do_paste(rterm::paste::Gesture::CommandV);
+        }
         self.handle_input(ctx);
         self.tab_rects.clear();
         let panel = ctx.style().visuals.panel_fill;
