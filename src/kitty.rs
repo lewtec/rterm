@@ -322,7 +322,8 @@ fn functional(letter: u8, mods: u32, event: Option<u32>) -> Vec<u8> {
     }
     let mut out = format!("\x1b[1;{mods}");
     if let Some(event) = event {
-        out.push(';');
+        // Event type is a sub-field of the modifiers, so the separator is a colon.
+        out.push(':');
         out.push_str(&event.to_string());
     }
     out.push(letter as char);
@@ -335,7 +336,7 @@ fn tilde(code: u32, mods: u32, event: Option<u32>) -> Vec<u8> {
     }
     let mut out = format!("\x1b[{code};{mods}");
     if let Some(event) = event {
-        out.push(';');
+        out.push(':');
         out.push_str(&event.to_string());
     }
     out.push('~');
@@ -347,11 +348,10 @@ fn csi_u(code: u32, mods: u32, event: Option<u32>, text: Option<u32>) -> Vec<u8>
     if mods != 1 || event.is_some() || text.is_some() {
         out.push(';');
         out.push_str(&mods.to_string());
-    }
-    if event.is_some() || text.is_some() {
-        let event = event.unwrap_or(1);
-        out.push(';');
-        out.push_str(&event.to_string());
+        if let Some(event) = event {
+            out.push(':');
+            out.push_str(&event.to_string());
+        }
     }
     if let Some(text) = text {
         out.push(';');
@@ -437,7 +437,24 @@ mod tests {
         );
         assert_eq!(
             encode(10, Key::Char('a'), Mods::default(), Phase::Release).as_deref(),
-            Some(b"\x1b[97;1;3u".as_slice())
+            Some(b"\x1b[97;1:3u".as_slice())
+        );
+    }
+
+    #[test]
+    fn ctrl_b_press_is_a_kitty_event() {
+        let mods = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        // Herdr enables flags 7, so the prefix key carries an event type.
+        assert_eq!(
+            encode(7, Key::Char('b'), mods, Phase::Press).as_deref(),
+            Some(b"\x1b[98;5:1u".as_slice())
+        );
+        assert_eq!(
+            encode(7, Key::Char('b'), mods, Phase::Release).as_deref(),
+            Some(b"\x1b[98;5:3u".as_slice())
         );
     }
 }
