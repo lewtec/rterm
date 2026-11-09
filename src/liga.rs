@@ -126,11 +126,21 @@ impl TerminalFont {
         px / self.font.units_per_em().unwrap_or(1000.0)
     }
 
-    pub fn raster(&self, glyph_id: u16, px: f32) -> Option<Coverage> {
-        let scale = self.font.pt_to_px_scale(px)?;
+    /// Pixel scale egui uses for this point size: the em box times the font's
+    /// height, not a 96 DPI point conversion. `pt_to_px_scale` draws the glyphs
+    /// about 1.6× too big for the cell.
+    pub fn raster_scale(&self, size_points: f32, pixels_per_point: f32) -> f32 {
+        let upem = self.font.units_per_em().unwrap_or(1000.0);
+        let height = self.font.height_unscaled();
+        (size_points * pixels_per_point.max(1.0) * height / upem)
+            .round()
+            .max(1.0)
+    }
+
+    pub fn raster(&self, glyph_id: u16, px_scale: f32) -> Option<Coverage> {
         let outlined = self
             .font
-            .outline_glyph(GlyphId(glyph_id).with_scale(scale))?;
+            .outline_glyph(GlyphId(glyph_id).with_scale(px_scale))?;
         let bounds = outlined.px_bounds();
         let width = bounds.width().ceil() as usize;
         let height = bounds.height().ceil() as usize;
@@ -330,5 +340,18 @@ mod tests {
         assert!(font.plan("->").is_some(), "arrow should become a ligature");
         assert!(font.plan("ab").is_none());
         assert_eq!(font.weight(), Some(400.0));
+        use ab_glyph::Font as _;
+        use ab_glyph::ScaleFont as _;
+        let scale = font.raster_scale(14.0, 2.0);
+        let coverage = font.raster(font.glyph_id('M'), scale).unwrap();
+        let advance = font
+            .font
+            .as_scaled(scale)
+            .h_advance(ab_glyph::GlyphId(font.glyph_id('M')));
+        let right = coverage.left + coverage.width as f32;
+        assert!(
+            right <= advance + 1.5,
+            "M ink ends at {right}, advance is {advance}"
+        );
     }
 }

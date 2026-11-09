@@ -1,4 +1,5 @@
 use eframe::egui;
+use eframe::egui::emath::GuiRounding;
 
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
@@ -1623,10 +1624,11 @@ fn paint_face_glyph(
         return false;
     };
     let pen_y = baseline_y - y_offset as f32 * scale;
-    let glyph_rect = egui::Rect::from_min_size(
+    let glyph_rect = egui::emath::Rect::from_min_size(
         egui::pos2(pen_x + drawn.left, pen_y + drawn.top),
         egui::vec2(drawn.width, drawn.height),
-    );
+    )
+    .round_to_pixels(pixels_per_point.max(1.0));
     ui.painter().image(
         drawn.texture.id(),
         glyph_rect,
@@ -1703,7 +1705,7 @@ fn liga_glyph(
     px: f32,
     pixels_per_point: f32,
 ) -> Option<LigaGlyph> {
-    let raster_px = (px * pixels_per_point.max(1.0)).round().max(1.0);
+    let raster_px = font.raster_scale(px, pixels_per_point);
     let key = (glyph_id, raster_px.to_bits());
     if cache.contains_key(&key) {
         return cache.get(&key).cloned();
