@@ -57,6 +57,8 @@ pub struct RtermApp {
     appearance: crate::appearance::Appearance,
     faces: Vec<crate::appearance::Face>,
     applied_font: Option<String>,
+    terminal_font: Option<crate::liga::TerminalFont>,
+    liga_cache: std::collections::HashMap<(u16, u32), LigaGlyph>,
     settings_open: bool,
     paste: PasteRun,
     paste_token: u64,
@@ -81,6 +83,8 @@ impl RtermApp {
             appearance: crate::appearance::load(&crate::appearance::path()),
             faces: crate::appearance::faces(),
             applied_font: None,
+            terminal_font: None,
+            liga_cache: std::collections::HashMap::new(),
             settings_open: false,
             paste: PasteRun {
                 place_id: Uuid::nil(),
@@ -723,7 +727,16 @@ impl RtermApp {
             let char_h = galley.size().y.max(1.0);
             if let Some(session) = self.sessions.get_mut(&place.id) {
                 session.fit(rect.width(), rect.height(), char_w, char_h);
-                paint_screen(ui, rect, session.screen(), &font, char_w, char_h);
+                paint_screen(
+                    ui,
+                    rect,
+                    session.screen(),
+                    &font,
+                    char_w,
+                    char_h,
+                    self.terminal_font.as_ref(),
+                    &mut self.liga_cache,
+                );
                 if self.store.editor.is_none() {
                     mark_ime(ui, ime_cursor(rect, session.screen(), char_w, char_h));
                 }
@@ -857,6 +870,13 @@ impl RtermApp {
             return;
         }
         crate::appearance::apply(ctx, &self.appearance.font, &self.faces);
+        self.liga_cache.clear();
+        self.terminal_font = self
+            .faces
+            .iter()
+            .find(|face| face.name == self.appearance.font)
+            .and_then(|face| std::fs::read(&face.path).ok())
+            .and_then(crate::liga::TerminalFont::load);
         self.applied_font = Some(self.appearance.font.clone());
     }
 
@@ -959,9 +979,9 @@ impl RtermApp {
         let mut done = false;
         let size = self.appearance.size;
         let current = self.appearance.font.clone();
-        let names: Vec<String> = self.faces.iter().map(|face| face.name.clone()).collect();
         let mut next_size = None;
         let mut next_font = None;
+        let mut listed = None;
         sheet(ctx, "settings", &mut open, |ui| {
             ui.set_min_width(360.0);
             ui.label(egui::RichText::new("Settings").size(18.0));
@@ -976,17 +996,22 @@ impl RtermApp {
                 .selected_text(shown)
                 .width(260.0)
                 .show_ui(ui, |ui| {
+                    let faces = crate::appearance::faces();
                     if ui
                         .selectable_label(current == crate::appearance::BUILT_IN, "Built-in")
                         .clicked()
                     {
                         next_font = Some(crate::appearance::BUILT_IN.to_string());
                     }
-                    for name in &names {
-                        if ui.selectable_label(current == *name, name).clicked() {
-                            next_font = Some(name.clone());
+                    for face in &faces {
+                        if ui
+                            .selectable_label(current == face.name, face.name.as_str())
+                            .clicked()
+                        {
+                            next_font = Some(face.name.clone());
                         }
                     }
+                    listed = Some(faces);
                 });
             ui.add_space(8.0);
             ui.label("Size");
@@ -1000,10 +1025,7 @@ impl RtermApp {
                 }
             });
             ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("rterm — the quick brown fox")
-                    .font(egui::FontId::monospace(size)),
-            );
+            font_preview(self, ui, size);
             ui.add_space(12.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Done").clicked() {
@@ -1018,6 +1040,9 @@ impl RtermApp {
         if let Some(font) = next_font {
             self.appearance.font = font;
             self.store_appearance();
+        }
+        if let Some(faces) = listed {
+            self.faces = faces;
         }
         if done {
             open = false;
@@ -1095,22 +1120,20 @@ fn can_save(editor: &PlaceEditorState) -> bool {
 }
 
 fn paint_wrench(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
-    let stroke = egui::Stroke::new(1.6, color);
     let center = rect.center();
-    let head = center + egui::vec2(-2.0, -4.0);
-    painter.circle_stroke(head, 3.3, stroke);
-    painter.line_segment(
-        [head + egui::vec2(1.8, -2.4), head + egui::vec2(4.6, -4.8)],
-        stroke,
-    );
-    painter.line_segment(
-        [head + egui::vec2(2.6, -0.4), head + egui::vec2(5.0, -2.4)],
-        stroke,
-    );
-    painter.line_segment(
-        [head + egui::vec2(1.6, 2.2), center + egui::vec2(5.2, 6.2)],
+    let point = |x: f32, y: f32| center + egui::vec2(x, y);
+    // Open jaw, then the handle. A closed ring reads as a magnifying glass.
+    let mut jaw = Vec::new();
+    let head = point(-2.2, -3.4);
+    for step in 0..=14 {
+        let angle = -0.4 + step as f32 * (4.4 / 14.0);
+        jaw.push(head + egui::vec2(angle.cos(), angle.sin()) * 3.5);
+    }
+    jaw.push(point(5.4, 6.2));
+    painter.add(egui::Shape::Path(egui::epaint::PathShape::line(
+        jaw,
         egui::Stroke::new(2.3, color),
-    );
+    )));
 }
 
 /// Clicks and drags stay on the pointer. Tab and Enter belong to the terminal.
@@ -1278,6 +1301,16 @@ fn paint_hud(ui: &egui::Ui, rect: egui::Rect, hud: &PasteHud) {
     );
 }
 
+#[derive(Clone)]
+struct LigaGlyph {
+    texture: egui::TextureHandle,
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn paint_screen(
     ui: &egui::Ui,
     rect: egui::Rect,
@@ -1285,11 +1318,14 @@ fn paint_screen(
     font: &egui::FontId,
     char_w: f32,
     char_h: f32,
+    terminal_font: Option<&crate::liga::TerminalFont>,
+    liga_cache: &mut std::collections::HashMap<(u16, u32), LigaGlyph>,
 ) {
     let (rows, cols) = screen.size();
     let rows = rows.get();
     let cols = cols.get();
     let painter = ui.painter();
+    let baseline = text_baseline(ui, font);
     for row in 0..rows {
         let links = rterm::click::links_in_row(screen, row);
         let mut col = 0u16;
@@ -1302,32 +1338,61 @@ fn paint_screen(
                 col += 1;
                 continue;
             }
+            if let Some(face) = terminal_font {
+                if cell_is_plain_ascii(cell) {
+                    let end = ascii_run_end(screen, row, col, cols);
+                    paint_ascii_run(
+                        ui,
+                        screen,
+                        rect,
+                        row,
+                        col,
+                        end,
+                        font,
+                        char_w,
+                        char_h,
+                        baseline,
+                        &links,
+                        Some(face),
+                        liga_cache,
+                    );
+                    col = end;
+                    continue;
+                }
+                let text = cell.contents();
+                let ch = text.chars().next().filter(|_| text.chars().count() == 1);
+                if let Some(ch) = ch
+                    && !cell.is_wide()
+                    && face.glyph_id(ch) != 0
+                {
+                    paint_cell_background(painter, screen, rect, row, col, char_w, char_h, &links);
+                    let (fg, _, _) = cell_ink(cell);
+                    let origin = rect.min + egui::vec2(col as f32 * char_w, row as f32 * char_h);
+                    if !paint_face_glyph(
+                        ui,
+                        liga_cache,
+                        face,
+                        face.glyph_id(ch),
+                        font.size,
+                        origin.x,
+                        origin.y + baseline,
+                        0,
+                        face.unit_scale(font.size),
+                        ui.ctx().pixels_per_point(),
+                        fg,
+                    ) {
+                        paint_cell(
+                            painter, screen, rect, row, col, 1, font, char_w, char_h, &links,
+                        );
+                    }
+                    col += 1;
+                    continue;
+                }
+            }
             let span = if cell.is_wide() { 2 } else { 1 };
-            let origin = rect.min + egui::vec2(col as f32 * char_w, row as f32 * char_h);
-            let cell_rect =
-                egui::Rect::from_min_size(origin, egui::vec2(char_w * span as f32, char_h));
-            let mut fg = color_of(cell.fgcolor(), egui::Color32::from_rgb(220, 220, 220));
-            let mut bg = color_of(cell.bgcolor(), egui::Color32::TRANSPARENT);
-            if cell.inverse() {
-                std::mem::swap(&mut fg, &mut bg);
-            }
-            if bg != egui::Color32::TRANSPARENT {
-                painter.rect_filled(cell_rect, 0.0, bg);
-            }
-            let text = cell.contents();
-            if !text.is_empty() && text != " " {
-                painter.text(origin, egui::Align2::LEFT_TOP, text, font.clone(), fg);
-            }
-            if links
-                .iter()
-                .any(|(start, end, _)| col >= *start && col <= *end)
-            {
-                painter.hline(
-                    cell_rect.x_range(),
-                    cell_rect.bottom() - 1.0,
-                    egui::Stroke::new(1.0, fg),
-                );
-            }
+            paint_cell(
+                painter, screen, rect, row, col, span, font, char_w, char_h, &links,
+            );
             col += span;
         }
     }
@@ -1340,6 +1405,339 @@ fn paint_screen(
             egui::Color32::from_white_alpha(50),
         );
     }
+}
+
+fn font_preview(app: &mut RtermApp, ui: &mut egui::Ui, size: f32) {
+    let sample = "x -> y => z != w";
+    let Some(face) = app.terminal_font.as_ref() else {
+        ui.label(egui::RichText::new(sample).font(egui::FontId::monospace(size)));
+        return;
+    };
+    let font = egui::FontId::monospace(size);
+    let em = ui
+        .painter()
+        .layout_no_wrap("M".to_owned(), font.clone(), egui::Color32::WHITE);
+    let char_w = em.size().x.max(1.0);
+    let char_h = em.size().y.max(1.0);
+    let baseline = text_baseline(ui, &font);
+    let width = sample.chars().count() as f32 * char_w;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, char_h), egui::Sense::hover());
+    let scale = face.unit_scale(size);
+    let pixels_per_point = ui.ctx().pixels_per_point();
+    let color = ui.visuals().text_color();
+    for glyph in face.glyphs(sample) {
+        if glyph.glyph_id == 0 {
+            continue;
+        }
+        let _ = paint_face_glyph(
+            ui,
+            &mut app.liga_cache,
+            face,
+            glyph.glyph_id,
+            size,
+            rect.min.x + glyph.start as f32 * char_w + glyph.x_offset as f32 * scale,
+            rect.min.y + baseline,
+            glyph.y_offset,
+            scale,
+            pixels_per_point,
+            color,
+        );
+    }
+}
+
+fn text_baseline(ui: &egui::Ui, font: &egui::FontId) -> f32 {
+    let galley = ui
+        .painter()
+        .layout_no_wrap("M".to_owned(), font.clone(), egui::Color32::WHITE);
+    // pos.y is the baseline egui actually uses. font_ascent is the whole
+    // family, including the emoji face, so it sits the letters too low.
+    galley
+        .rows
+        .first()
+        .and_then(|row| row.glyphs.first())
+        .map(|glyph| glyph.pos.y)
+        .unwrap_or(font.size * 0.8)
+}
+
+fn cell_is_plain_ascii(cell: &vt100::Cell) -> bool {
+    if cell.is_wide() {
+        return false;
+    }
+    let text = cell.contents();
+    text.is_empty() || text == " " || (text.len() == 1 && text.as_bytes()[0].is_ascii())
+}
+
+fn cell_ink(cell: &vt100::Cell) -> (egui::Color32, egui::Color32, bool) {
+    let mut fg = color_of(cell.fgcolor(), egui::Color32::from_rgb(220, 220, 220));
+    let mut bg = color_of(cell.bgcolor(), egui::Color32::TRANSPARENT);
+    if cell.inverse() {
+        std::mem::swap(&mut fg, &mut bg);
+    }
+    (fg, bg, cell.underline())
+}
+
+fn ascii_run_end(screen: &vt100::Screen, row: u16, start: u16, cols: u16) -> u16 {
+    let Some(first) = screen.cell(row, start) else {
+        return start + 1;
+    };
+    let ink = cell_ink(first);
+    let mut col = start + 1;
+    while col < cols {
+        let Some(cell) = screen.cell(row, col) else {
+            break;
+        };
+        if cell.is_wide_continuation() || !cell_is_plain_ascii(cell) || cell_ink(cell) != ink {
+            break;
+        }
+        col += 1;
+    }
+    col
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_cell(
+    painter: &egui::Painter,
+    screen: &vt100::Screen,
+    rect: egui::Rect,
+    row: u16,
+    col: u16,
+    span: u16,
+    font: &egui::FontId,
+    char_w: f32,
+    char_h: f32,
+    links: &[(u16, u16, String)],
+) {
+    let Some(cell) = screen.cell(row, col) else {
+        return;
+    };
+    let origin = rect.min + egui::vec2(col as f32 * char_w, row as f32 * char_h);
+    let cell_rect = egui::Rect::from_min_size(origin, egui::vec2(char_w * span as f32, char_h));
+    let (fg, bg, _) = cell_ink(cell);
+    if bg != egui::Color32::TRANSPARENT {
+        painter.rect_filled(cell_rect, 0.0, bg);
+    }
+    let text = cell.contents();
+    if !text.is_empty() && text != " " {
+        painter.text(origin, egui::Align2::LEFT_TOP, text, font.clone(), fg);
+    }
+    if links
+        .iter()
+        .any(|(start, end, _)| col >= *start && col <= *end)
+    {
+        painter.hline(
+            cell_rect.x_range(),
+            cell_rect.bottom() - 1.0,
+            egui::Stroke::new(1.0, fg),
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_ascii_run(
+    ui: &egui::Ui,
+    screen: &vt100::Screen,
+    rect: egui::Rect,
+    row: u16,
+    start: u16,
+    end: u16,
+    font: &egui::FontId,
+    char_w: f32,
+    char_h: f32,
+    baseline: f32,
+    links: &[(u16, u16, String)],
+    terminal_font: Option<&crate::liga::TerminalFont>,
+    liga_cache: &mut std::collections::HashMap<(u16, u32), LigaGlyph>,
+) {
+    let painter = ui.painter();
+    let mut text = String::new();
+    for col in start..end {
+        paint_cell_background(painter, screen, rect, row, col, char_w, char_h, links);
+        let contents = screen
+            .cell(row, col)
+            .map(|cell| cell.contents())
+            .unwrap_or("");
+        text.push(if contents.is_empty() {
+            ' '
+        } else {
+            contents.chars().next().unwrap_or(' ')
+        });
+    }
+    let Some(face) = terminal_font else {
+        paint_ascii_text(painter, screen, rect, row, start, end, font, char_w, char_h);
+        return;
+    };
+    let (fg, _, _) = screen.cell(row, start).map(cell_ink).unwrap_or((
+        egui::Color32::WHITE,
+        egui::Color32::TRANSPARENT,
+        false,
+    ));
+    let scale = face.unit_scale(font.size);
+    let pixels_per_point = ui.ctx().pixels_per_point();
+    for glyph in face.glyphs(&text) {
+        let col = start + glyph.start as u16;
+        if glyph.glyph_id == 0
+            || !paint_face_glyph(
+                ui,
+                liga_cache,
+                face,
+                glyph.glyph_id,
+                font.size,
+                rect.min.x + col as f32 * char_w + glyph.x_offset as f32 * scale,
+                rect.min.y + row as f32 * char_h + baseline,
+                glyph.y_offset,
+                scale,
+                pixels_per_point,
+                fg,
+            )
+        {
+            paint_ascii_text(
+                painter,
+                screen,
+                rect,
+                row,
+                col,
+                start + glyph.end as u16,
+                font,
+                char_w,
+                char_h,
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_face_glyph(
+    ui: &egui::Ui,
+    cache: &mut std::collections::HashMap<(u16, u32), LigaGlyph>,
+    face: &crate::liga::TerminalFont,
+    glyph_id: u16,
+    px: f32,
+    pen_x: f32,
+    baseline_y: f32,
+    y_offset: i32,
+    scale: f32,
+    pixels_per_point: f32,
+    color: egui::Color32,
+) -> bool {
+    let Some(drawn) = liga_glyph(ui.ctx(), cache, face, glyph_id, px, pixels_per_point) else {
+        return false;
+    };
+    let pen_y = baseline_y - y_offset as f32 * scale;
+    let glyph_rect = egui::Rect::from_min_size(
+        egui::pos2(pen_x + drawn.left, pen_y + drawn.top),
+        egui::vec2(drawn.width, drawn.height),
+    );
+    ui.painter().image(
+        drawn.texture.id(),
+        glyph_rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        color,
+    );
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_ascii_text(
+    painter: &egui::Painter,
+    screen: &vt100::Screen,
+    rect: egui::Rect,
+    row: u16,
+    start: u16,
+    end: u16,
+    font: &egui::FontId,
+    char_w: f32,
+    char_h: f32,
+) {
+    for col in start..end {
+        let Some(cell) = screen.cell(row, col) else {
+            continue;
+        };
+        let text = cell.contents();
+        if text.is_empty() || text == " " {
+            continue;
+        }
+        let origin = rect.min + egui::vec2(col as f32 * char_w, row as f32 * char_h);
+        let (fg, _, _) = cell_ink(cell);
+        painter.text(origin, egui::Align2::LEFT_TOP, text, font.clone(), fg);
+        let _ = char_h;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_cell_background(
+    painter: &egui::Painter,
+    screen: &vt100::Screen,
+    rect: egui::Rect,
+    row: u16,
+    col: u16,
+    char_w: f32,
+    char_h: f32,
+    links: &[(u16, u16, String)],
+) {
+    let Some(cell) = screen.cell(row, col) else {
+        return;
+    };
+    let origin = rect.min + egui::vec2(col as f32 * char_w, row as f32 * char_h);
+    let cell_rect = egui::Rect::from_min_size(origin, egui::vec2(char_w, char_h));
+    let (fg, bg, _) = cell_ink(cell);
+    if bg != egui::Color32::TRANSPARENT {
+        painter.rect_filled(cell_rect, 0.0, bg);
+    }
+    if links
+        .iter()
+        .any(|(start, end, _)| col >= *start && col <= *end)
+    {
+        painter.hline(
+            cell_rect.x_range(),
+            cell_rect.bottom() - 1.0,
+            egui::Stroke::new(1.0, fg),
+        );
+    }
+}
+
+fn liga_glyph(
+    ctx: &egui::Context,
+    cache: &mut std::collections::HashMap<(u16, u32), LigaGlyph>,
+    font: &crate::liga::TerminalFont,
+    glyph_id: u16,
+    px: f32,
+    pixels_per_point: f32,
+) -> Option<LigaGlyph> {
+    let raster_px = (px * pixels_per_point.max(1.0)).round().max(1.0);
+    let key = (glyph_id, raster_px.to_bits());
+    if cache.contains_key(&key) {
+        return cache.get(&key).cloned();
+    }
+    let coverage = font.raster(glyph_id, raster_px)?;
+    let pixels_per_point = pixels_per_point.max(1.0);
+    // Same coverage curve as egui's font atlas, so these glyphs match the fallback faces.
+    let pixels = coverage
+        .alpha
+        .iter()
+        .map(|alpha| {
+            let eased = (*alpha as f32 / 255.0).powf(0.55);
+            let a = (eased * 255.0).round() as u8;
+            egui::Color32::from_rgba_premultiplied(a, a, a, a)
+        })
+        .collect();
+    let image = egui::ColorImage {
+        size: [coverage.width, coverage.height],
+        pixels,
+    };
+    let texture = ctx.load_texture(
+        format!("liga-{glyph_id}-{}", px.to_bits()),
+        image,
+        egui::TextureOptions::LINEAR,
+    );
+    let drawn = LigaGlyph {
+        texture,
+        left: coverage.left / pixels_per_point,
+        top: coverage.top / pixels_per_point,
+        width: coverage.width as f32 / pixels_per_point,
+        height: coverage.height as f32 / pixels_per_point,
+    };
+    cache.insert(key, drawn.clone());
+    Some(drawn)
 }
 
 fn ime_cursor(rect: egui::Rect, screen: &vt100::Screen, char_w: f32, char_h: f32) -> egui::Rect {

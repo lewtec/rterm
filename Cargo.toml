@@ -12,6 +12,7 @@ eframe = { version = "0.31", default-features = false, features = ["default_font
 image = { version = "0.25", default-features = false, features = ["png", "tiff"] }
 notify = "6.1"
 portable-pty = "0.9"
+rustybuzz = "0.20"
 uuid = { version = "1", features = ["v4"] }
 vt100 = "0.18"
 

@@ -75,33 +75,107 @@ pub fn save(path: &Path, appearance: &Appearance) -> std::io::Result<()> {
 }
 
 pub fn faces() -> Vec<Face> {
-    let mut best: Vec<(String, u8, PathBuf)> = Vec::new();
+    let mut files = Vec::new();
     for dir in font_dirs() {
-        let mut files = Vec::new();
         collect_fonts(&dir, 4, &mut files);
-        for path in files {
-            let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-                continue;
-            };
-            if !looks_mono(stem) {
-                continue;
+    }
+    fontconfig_files(&mut files);
+    files.sort();
+    files.dedup();
+    let stamp = file_stamp(&files);
+    if let Some(cached) = cached_faces(stamp) {
+        return cached;
+    }
+    let mut best: Vec<(String, u8, PathBuf)> = Vec::new();
+    for path in files {
+        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        if !looks_mono(stem) {
+            continue;
+        }
+        let name = family_name(stem);
+        let rank = weight_rank(stem);
+        if let Some(existing) = best.iter_mut().find(|(have, _, _)| have == &name) {
+            if rank < existing.1 {
+                existing.1 = rank;
+                existing.2 = path;
             }
-            let name = family_name(stem);
-            let rank = weight_rank(stem);
-            if let Some(existing) = best.iter_mut().find(|(have, _, _)| have == &name) {
-                if rank < existing.1 {
-                    existing.1 = rank;
-                    existing.2 = path;
-                }
-            } else if font_bytes_ok(&path) {
-                best.push((name, rank, path));
-            }
+        } else if font_bytes_ok(&path) {
+            best.push((name, rank, path));
         }
     }
     best.sort_by(|a, b| a.0.cmp(&b.0));
-    best.into_iter()
+    let faces: Vec<Face> = best
+        .into_iter()
         .map(|(name, _, path)| Face { name, path })
-        .collect()
+        .collect();
+    store_faces(stamp, &faces);
+    faces
+}
+
+struct FaceCache {
+    stamp: u64,
+    faces: Vec<Face>,
+}
+
+fn face_cache() -> &'static std::sync::Mutex<Option<FaceCache>> {
+    static CACHE: std::sync::Mutex<Option<FaceCache>> = std::sync::Mutex::new(None);
+    &CACHE
+}
+
+fn cached_faces(stamp: u64) -> Option<Vec<Face>> {
+    face_cache()
+        .lock()
+        .ok()?
+        .as_ref()
+        .and_then(|cached| (cached.stamp == stamp).then(|| cached.faces.clone()))
+}
+
+fn store_faces(stamp: u64, faces: &[Face]) {
+    if let Ok(mut cache) = face_cache().lock() {
+        *cache = Some(FaceCache {
+            stamp,
+            faces: faces.to_vec(),
+        });
+    }
+}
+
+fn file_stamp(files: &[PathBuf]) -> u64 {
+    let mut stamp = files.len() as u64;
+    for path in files {
+        let Ok(meta) = std::fs::metadata(path) else {
+            continue;
+        };
+        stamp = stamp.wrapping_mul(31).wrapping_add(meta.len());
+        if let Ok(modified) = meta.modified()
+            && let Ok(since) = modified.duration_since(std::time::UNIX_EPOCH)
+        {
+            stamp = stamp.wrapping_add(since.as_nanos() as u64);
+        }
+        for byte in path.to_string_lossy().bytes() {
+            stamp = stamp.wrapping_mul(33).wrapping_add(u64::from(byte));
+        }
+    }
+    stamp
+}
+
+fn fontconfig_files(into: &mut Vec<PathBuf>) {
+    let Ok(output) = std::process::Command::new("fc-list")
+        .args([":mono", "file"])
+        .output()
+    else {
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let path = line.split(':').next().unwrap_or("").trim();
+        if is_font_file(Path::new(path)) {
+            into.push(PathBuf::from(path));
+        }
+    }
 }
 
 pub fn apply(ctx: &eframe::egui::Context, font: &str, faces: &[Face]) {
@@ -199,19 +273,29 @@ fn looks_mono(stem: &str) -> bool {
 
 fn family_name(stem: &str) -> String {
     let stem = stem.split('.').next().unwrap_or(stem);
-    let base = stem
-        .split(['-', '_'])
-        .find(|part| !part.is_empty() && !is_weight(part))
-        .unwrap_or(stem);
-    let mut name = String::new();
-    let chars: Vec<char> = base.chars().collect();
-    for (index, ch) in chars.iter().enumerate() {
-        if index > 0 && ch.is_uppercase() && chars[index - 1].is_lowercase() {
-            name.push(' ');
+    let mut words = Vec::new();
+    for part in stem.split(['-', '_', ' ']) {
+        if part.is_empty() || is_weight(part) || part.eq_ignore_ascii_case("vf") {
+            continue;
         }
-        name.push(*ch);
+        let chars: Vec<char> = part.chars().collect();
+        let mut word = String::new();
+        for (index, ch) in chars.iter().enumerate() {
+            if index > 0 && ch.is_uppercase() && chars[index - 1].is_lowercase() && !word.is_empty()
+            {
+                words.push(std::mem::take(&mut word));
+            }
+            word.push(*ch);
+        }
+        if !word.is_empty() {
+            words.push(word);
+        }
     }
-    name
+    if words.is_empty() {
+        stem.to_string()
+    } else {
+        words.join(" ")
+    }
 }
 
 fn is_weight(part: &str) -> bool {
@@ -238,6 +322,9 @@ fn is_weight(part: &str) -> bool {
 
 fn weight_rank(stem: &str) -> u8 {
     let name = stem.to_ascii_lowercase();
+    if name.contains("vf") || name.contains("variable") {
+        return 4;
+    }
     if name.contains("italic") || name.contains("oblique") || name.contains("bold") {
         3
     } else if name.contains("light") || name.contains("thin") || name.contains("medium") {
@@ -292,6 +379,7 @@ mod tests {
     fn family_names_drop_the_weight() {
         assert!(looks_mono("JetBrainsMono-Regular"));
         assert_eq!(family_name("JetBrainsMono-Regular"), "Jet Brains Mono");
+        assert_eq!(family_name("Fira Code Regular"), "Fira Code");
         assert_eq!(family_name("Menlo"), "Menlo");
         assert!(!looks_mono("Helvetica"));
     }

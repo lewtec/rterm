@@ -4,6 +4,7 @@ mod clip;
 mod fill;
 mod gui;
 mod keys;
+mod liga;
 mod mac_paste;
 mod osc52;
 mod session;
