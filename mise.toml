@@ -3,7 +3,7 @@
 [tools]
 rust = { version = "1.93.0", components = ["rustfmt", "clippy"] }
 goreleaser = "2.18.3"
-svu = "3.3.0"
+svu = "3.4.4"
 zig = "0.16.0"
 "ubi:rust-cross/cargo-zigbuild" = "0.24.0"
 "conda:gcc" = { version = "16.2.0", os = ["linux"] }
