@@ -10,7 +10,7 @@ ab_glyph = "0.2.32"
 arboard = { version = "3", default-features = false, features = ["image-data"] }
 eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "x11"] }
 image = { version = "0.25", default-features = false, features = ["png", "tiff"] }
-notify = "6.1"
+notify = "8.0"
 portable-pty = "0.9"
 rustybuzz = "0.20"
 uuid = { version = "1", features = ["v4"] }
