@@ -1,25 +1,59 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
-#
-# The Mac .app is built by scripts/package-dmg.sh. GoReleaser only
-# attaches that DMG to the GitHub release.
 
 version: 2
 project_name: rterm
 
-# skip+non-go: goreleaser still defaults builder to go, then runs `go list -m`.
+# Same matrix as refactree-rs. The default command is cargo zigbuild.
+# Darwin still needs an Apple SDK; zig does not ship one.
+before:
+  hooks:
+    - bash scripts/macos-sdk.sh
+
 builds:
-  - skip: true
+  - id: rterm
     builder: rust
+    binary: rterm
+    flags:
+      - --locked
+      - --release
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
+      - x86_64-pc-windows-gnu
+      - aarch64-pc-windows-gnullvm
+    env:
+      - RTERM_VERSION={{ .Version }}
+      - >-
+        {{- if eq .Os "darwin" -}}
+        SDKROOT={{ .Env.HOME }}/.cache/rterm/MacOSX14.5.sdk
+        {{- end -}}
+      - >-
+        {{- if eq .Os "darwin" -}}
+        MACOSX_DEPLOYMENT_TARGET=14.0
+        {{- end -}}
 
 archives:
-  - formats: [none]
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 checksum:
   name_template: checksums.txt
   algorithm: sha256
-  extra_files:
-    - glob: artifacts/*.dmg
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
 
 changelog:
   sort: asc
@@ -32,8 +66,6 @@ changelog:
       - Merge branch
 
 release:
-  extra_files:
-    - glob: artifacts/*.dmg
   footer: >-
 
     ---

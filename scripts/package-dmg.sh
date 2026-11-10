@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Build a Release .app and wrap it in artifacts/rterm-<version>.dmg.
 # VERSION comes from the environment, or from an exact git tag.
+# Runs on macOS. Linux releases ship the GoReleaser binary instead.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+
+if [[ "$(uname)" != Darwin ]]; then
+  echo "package-dmg: run this on macOS" >&2
+  exit 1
+fi
 
 version="${VERSION:-}"
 if [[ -z "$version" ]]; then
@@ -17,49 +23,39 @@ if [[ -z "$version" ]]; then
   exit 1
 fi
 
-derived="$root/build/DerivedData.noindex"
 stage="$root/build/dmg"
 artifacts="$root/artifacts"
 app_name="rterm"
+app="$stage/${app_name}.app"
 dmg="$artifacts/${app_name}-${version}.dmg"
 
 rm -rf "$stage"
-mkdir -p "$stage" "$artifacts" "$derived"
+mkdir -p "$stage" "$artifacts" "$app/Contents/MacOS" "$app/Contents/Resources"
 
-xcodegen generate
+export RTERM_VERSION="$version"
+bash scripts/cargo.sh build --locked --release
+cp "$root/target/release/rterm" "$app/Contents/MacOS/rterm"
+chmod +x "$app/Contents/MacOS/rterm"
 
-xcodebuild \
-  -project rterm.xcodeproj \
-  -scheme rterm \
-  -configuration Release \
-  -destination 'generic/platform=macOS' \
-  -derivedDataPath "$derived" \
-  -skipPackagePluginValidation \
-  SWIFT_ENABLE_TESTABILITY=YES \
-  ENABLE_TESTABILITY=YES \
-  MARKETING_VERSION="$version" \
-  CURRENT_PROJECT_VERSION="$version" \
-  CODE_SIGN_IDENTITY="-" \
-  CODE_SIGNING_REQUIRED=NO \
-  ARCHS="arm64 x86_64" \
-  ONLY_ACTIVE_ARCH=NO \
-  build
+sed "s/__VERSION__/${version}/g" packaging/Info.plist > "$app/Contents/Info.plist"
+printf 'APPL????' > "$app/Contents/PkgInfo"
 
-app="$derived/Build/Products/Release/${app_name}.app"
-if [[ ! -d "$app" ]]; then
-  echo "package-dmg: missing $app" >&2
-  exit 1
-fi
+iconset="$stage/AppIcon.iconset"
+mkdir -p "$iconset"
+src_icon="$root/Assets.xcassets/AppIcon.appiconset"
+cp "$src_icon/icon_16x16.png" "$iconset/icon_16x16.png"
+cp "$src_icon/icon_16x16@2x.png" "$iconset/icon_16x16@2x.png"
+cp "$src_icon/icon_32x32.png" "$iconset/icon_32x32.png"
+cp "$src_icon/icon_32x32@2x.png" "$iconset/icon_32x32@2x.png"
+cp "$src_icon/icon_128x128.png" "$iconset/icon_128x128.png"
+cp "$src_icon/icon_128x128@2x.png" "$iconset/icon_128x128@2x.png"
+cp "$src_icon/icon_256x256.png" "$iconset/icon_256x256.png"
+cp "$src_icon/icon_256x256@2x.png" "$iconset/icon_256x256@2x.png"
+cp "$src_icon/icon_512x512.png" "$iconset/icon_512x512.png"
+cp "$src_icon/icon_512x512@2x.png" "$iconset/icon_512x512@2x.png"
+iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
 
-built_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
-if [[ "$built_version" != "$version" ]]; then
-  echo "package-dmg: Info.plist version $built_version != $version" >&2
-  exit 1
-fi
-
-cp -R "$app" "$stage/"
 ln -s /Applications "$stage/Applications"
-
 rm -f "$dmg"
 hdiutil create \
   -volname "$app_name" \

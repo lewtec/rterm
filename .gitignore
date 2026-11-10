@@ -1,10 +1,5 @@
 .DS_Store
+/target
 build/
 artifacts/
 dist/
-DerivedData/
-.swiftpm/
-*.xcuserstate
-xcuserdata/
-*.xcodeproj/xcuserdata/
-*.xcodeproj/project.xcworkspace/xcuserdata/

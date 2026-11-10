@@ -4,32 +4,34 @@ on:
   push:
     branches:
       - main
-    # Do not trigger on tags: release pushes a tag, which would re-enter this
-    # workflow and mint another version.
+    tags:
+      - "*"
   pull_request:
     branches:
       - main
   workflow_dispatch:
     inputs:
       new_version:
-        description: 'New tag version'
+        description: "New tag version"
         type: choice
-        default: 'patch'
+        default: "patch"
         options:
-          - next
           - patch
           - minor
           - major
   schedule:
-    - cron: '0 2 * * 6' # saturday 2am
+    - cron: "0 2 * * 6" # saturday 2am
 
 jobs:
   autorelease:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
+      attestations: write
+      id-token: write
+      pull-requests: write
     steps:
-      # Full history + tags required: svu needs existing tags to bump correctly.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
@@ -42,27 +44,37 @@ jobs:
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5
 
-      - name: Setup Xcode
-        run: |
-          sudo xcode-select -s /Applications/Xcode.app
-          xcodebuild -runFirstLaunch
-          xcodebuild -downloadComponent MetalToolchain
-
       - name: Install
         run: mise run install
 
+      - name: Create Pull Request if there is new stuff from updaters
+        if: github.event_name != 'pull_request'
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
+        id: pr_create
+        with:
+          commit-message: Updater script changes
+          branch: updater-bot
+          delete-branch: true
+          title: "Bot: automated changes"
+          body: |
+            Changes caused from update scripts
+
+      - name: Stop if a pull request was created
+        if: github.event_name != 'pull_request'
+        env:
+          PR_NUMBER: ${{ steps.pr_create.outputs.pull-request-number }}
+        run: |
+          if [[ -n "$PR_NUMBER" ]]; then
+            echo "The update scripts changed something and a PR was created. Giving up deploy." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: CI
-        if: github.event_name != 'workflow_dispatch'
         run: mise run ci
 
-      - name: Make release if everything looks right
+      - name: Release
         if: github.event_name == 'workflow_dispatch'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW_VERSION: ${{ github.event.inputs.new_version }}
-        run: |
-          set -euo pipefail
-          echo "Existing tags (top):"
-          git tag --sort=-v:refname | head -10 || true
-          echo "svu current=$(svu current 2>/dev/null || true) next=$(svu next) minor=$(svu minor) patch=$(svu patch)"
-          mise release "$NEW_VERSION"
+        run: mise release "$NEW_VERSION"
