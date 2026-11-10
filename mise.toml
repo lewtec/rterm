@@ -5,7 +5,7 @@ rust = { version = "1.93.0", components = ["rustfmt", "clippy"] }
 goreleaser = "2.18.3"
 svu = "3.3.0"
 zig = "0.16.0"
-"ubi:rust-cross/cargo-zigbuild" = "0.24.0"
+"ubi:rust-cross/cargo-zigbuild" = "0.24.1"
 "conda:gcc" = { version = "16.2.0", os = ["linux"] }
 "conda:binutils" = { version = "2.46.1", os = ["linux"] }
 
