@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,12 +18,12 @@ import (
 )
 
 const (
-	windowWidth  = 540
-	windowHeight = 380
-	appIconX     = 150
-	appIconY     = 180
-	appsIconX    = 390
-	appsIconY    = 180
+	windowWidth  = 600
+	windowHeight = 400
+	appIconX     = 170
+	appIconY     = 186
+	appsIconX    = 430
+	appsIconY    = 186
 	iconSize     = 128
 
 	// fatAlignShift is the Mach-O fat slice alignment (2^14), what Apple's lipo
@@ -133,13 +132,7 @@ func build(cfg config) (string, error) {
 	}
 
 	background := filepath.Join(cfg.Stage, "background.png")
-	slots := []dmg.IconSlot{
-		{X: appIconX, Y: appIconY, Label: cfg.AppName},
-		{X: appsIconX, Y: appsIconY, Label: "Applications"},
-	}
-	from := color.RGBA{R: 0x1b, G: 0x1d, B: 0x23, A: 0xff}
-	to := color.RGBA{R: 0x2b, G: 0x31, B: 0x3d, A: 0xff}
-	if err := dmg.InstallerBackground(windowWidth, windowHeight, from, to, slots, iconSize, background); err != nil {
+	if err := installerBackground(windowWidth, windowHeight, background); err != nil {
 		return "", fmt.Errorf("draw background: %w", err)
 	}
 
