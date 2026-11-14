@@ -2,7 +2,7 @@
 # prefixes because the host `cc` shim is not a compiler rustc can run.
 [tools]
 rust = { version = "1.93.0", components = ["rustfmt", "clippy"] }
-goreleaser = "2.18.3"
+goreleaser = "2.20.2"
 svu = "3.3.0"
 zig = "0.16.0"
 "ubi:rust-cross/cargo-zigbuild" = "0.24.0"
