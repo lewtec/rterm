@@ -3,15 +3,9 @@ package main
 import (
 	"image"
 	"image/color"
-	"image/draw"
 	"image/png"
 	"math"
 	"os"
-
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/goregular"
-	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/math/fixed"
 )
 
 // The background is drawn at twice the Finder window's point size so the DMG
@@ -20,13 +14,26 @@ const backgroundScale = 2
 
 // palette matches the app icon: near-black navy with a cyan glow.
 var (
-	bgTop       = color.RGBA{R: 0x16, G: 0x19, B: 0x20, A: 0xff}
-	bgBottom    = color.RGBA{R: 0x24, G: 0x2a, B: 0x35, A: 0xff}
-	bgAccent    = color.RGBA{R: 0x4d, G: 0xc3, B: 0xf0, A: 0xff}
-	bgArrow     = color.RGBA{R: 0xf4, G: 0xf7, B: 0xfb, A: 0xff}
-	bgCaption   = color.RGBA{R: 0xd6, G: 0xdf, B: 0xea, A: 0xff}
-	bgCaptionTx = "Drag to Applications"
+	bgTop     = color.RGBA{R: 0x16, G: 0x19, B: 0x20, A: 0xff}
+	bgBottom  = color.RGBA{R: 0x24, G: 0x2a, B: 0x35, A: 0xff}
+	bgAccent  = color.RGBA{R: 0x4d, G: 0xc3, B: 0xf0, A: 0xff}
+	bgArrow   = color.RGBA{R: 0xf4, G: 0xf7, B: 0xfb, A: 0xff}
+	bgPlate   = color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	bgPlateAa = 0.80
 )
+
+// labelPlate is the light chip baked under each icon, where Finder draws the
+// item's name. A background picture makes Finder render names in black in both
+// light and dark themes, and there is no label-colour setting in .DS_Store, so
+// the chip is what makes the names readable on the dark surface.
+var labelPlate = struct {
+	width, height, top, radius int
+}{
+	width:  iconSize,
+	height: 30,
+	top:    appIconY + iconSize/2,
+	radius: 15,
+}
 
 // installerBackground renders the styled background and writes it as a PNG.
 func installerBackground(windowWidth, windowHeight int, path string) error {
@@ -47,8 +54,7 @@ func installerBackground(windowWidth, windowHeight int, path string) error {
 	vignette(img, 0.22)
 
 	drawArrow(img)
-	drawCaption(img, bgCaptionTx, float64(windowWidth*backgroundScale),
-		float64(344*backgroundScale), 10.5*backgroundScale, 0.34)
+	labelPlates(img)
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -238,61 +244,34 @@ func drawArrow(img *image.RGBA) {
 	strokePolyline(img, headPath, 4*s, bgArrow, 0.60)
 }
 
-// drawCaption draws a small tracked caption centred horizontally.
-func drawCaption(img *image.RGBA, text string, width, baselineY, sizePx, alpha float64) {
-	face, err := newFace(sizePx)
-	if err != nil {
-		return
+// labelPlates bakes the light chips under both icons so Finder's black item
+// names have contrast on the dark surface.
+func labelPlates(img *image.RGBA) {
+	s := float64(backgroundScale)
+	w := float64(labelPlate.width) * s
+	h := float64(labelPlate.height) * s
+	top := (float64(labelPlate.top) + float64(labelPlate.height)/2) * s
+	for _, cx := range []int{appIconX, appsIconX} {
+		roundedPlate(img, float64(cx)*s, top, w, h, float64(labelPlate.radius)*s, bgPlate, bgPlateAa)
 	}
-	defer face.Close()
-
-	const tracking = 0.5 // extra px between glyphs, in background pixels
-
-	total := 0.0
-	prev := rune(0)
-	for _, r := range text {
-		if prev != 0 {
-			total += tracking
-		}
-		total += float64(font.MeasureString(face, string(r))) / 64
-		prev = r
-	}
-
-	mask := image.NewAlpha(img.Bounds())
-	d := &font.Drawer{
-		Dst:  mask,
-		Src:  image.NewUniform(color.Alpha{A: 0xff}),
-		Face: face,
-	}
-	d.Dot = fixed.P(int((width-total)/2), int(baselineY))
-	prev = 0
-	for _, r := range text {
-		if prev != 0 {
-			d.Dot.X += fixed.Int26_6(tracking * 64)
-		}
-		d.DrawString(string(r))
-		prev = r
-	}
-
-	col := color.RGBA{
-		R: uint8(float64(bgCaption.R) * alpha),
-		G: uint8(float64(bgCaption.G) * alpha),
-		B: uint8(float64(bgCaption.B) * alpha),
-		A: uint8(alpha * 255),
-	}
-	draw.DrawMask(img, img.Bounds(), image.NewUniform(col), image.Point{}, mask, image.Point{}, draw.Over)
 }
 
-func newFace(sizePx float64) (font.Face, error) {
-	f, err := opentype.Parse(goregular.TTF)
-	if err != nil {
-		return nil, err
+// roundedPlate fills an anti-aliased rounded rectangle centred at (cx, cy).
+func roundedPlate(img *image.RGBA, cx, cy, w, h, radius float64, c color.RGBA, alpha float64) {
+	x0, y0 := int(cx-w/2-1), int(cy-h/2-1)
+	x1, y1 := int(cx+w/2+1), int(cy+h/2+2)
+	hx, hy := w/2-radius, h/2-radius
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
+			qx := math.Abs(float64(x)+0.5-cx) - hx
+			qy := math.Abs(float64(y)+0.5-cy) - hy
+			d := math.Hypot(math.Max(qx, 0), math.Max(qy, 0)) + math.Min(math.Max(qx, qy), 0) - radius
+			cov := clamp01(0.5 - d)
+			if cov > 0 {
+				blend(img, x, y, c, alpha*cov)
+			}
+		}
 	}
-	return opentype.NewFace(f, &opentype.FaceOptions{
-		Size:    sizePx,
-		DPI:     72,
-		Hinting: font.HintingFull,
-	})
 }
 
 // vignette darkens the corners so the icons stay the visual focus.
