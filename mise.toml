@@ -1,7 +1,7 @@
 # Rust toolchain via mise. Linux builds use the conda gcc/binutils
 # prefixes because the host `cc` shim is not a compiler rustc can run.
 [tools]
-rust = { version = "1.93.0", components = ["rustfmt", "clippy"] }
+rust = { version = "1.100.0", components = ["rustfmt", "clippy"] }
 goreleaser = "2.18.3"
 svu = "3.3.0"
 zig = "0.16.0"
