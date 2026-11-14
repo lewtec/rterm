@@ -34,7 +34,9 @@ var labelPlate = struct {
 }{
 	width:  iconSize,
 	height: 30,
-	top:    appIconY + iconSize/2,
+	// Finder centres its label ink about 6 pt below the icon's bottom edge, not
+	// immediately under it, so the chip is pushed down to sit behind the text.
+	top:    appIconY + iconSize/2 + 6,
 	radius: 15,
 }
 
@@ -253,9 +255,9 @@ func labelPlates(img *image.RGBA) {
 	s := float64(backgroundScale)
 	w := float64(labelPlate.width) * s
 	h := float64(labelPlate.height) * s
-	top := (float64(labelPlate.top) + float64(labelPlate.height)/2) * s
+	cy := (float64(labelPlate.top) + float64(labelPlate.height)/2) * s
 	for _, cx := range []int{appIconX, appsIconX} {
-		roundedPlate(img, float64(cx)*s, top, w, h, float64(labelPlate.radius)*s, bgPlate, bgPlateAa)
+		roundedPlate(img, float64(cx)*s, cy, w, h, float64(labelPlate.radius)*s, bgPlate, bgPlateAa)
 	}
 }
 
