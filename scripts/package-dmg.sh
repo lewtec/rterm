@@ -87,7 +87,7 @@ flags=(
   -output "$dmg"
   -stage "$stage"
   -plist "$root/packaging/Info.plist"
-  -icon "$root/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png"
+  -icon "$root/packaging/icon.png"
 )
 [[ -n "$arm64" ]] && flags+=(-arm64 "$arm64")
 [[ -n "$amd64" ]] && flags+=(-amd64 "$amd64")

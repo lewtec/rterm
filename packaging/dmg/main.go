@@ -57,7 +57,7 @@ func main() {
 	flag.StringVar(&cfg.AMD64, "amd64", "", "x86_64 Mach-O binary")
 	flag.StringVar(&cfg.Stage, "stage", "build/dmg", "staging directory")
 	flag.StringVar(&cfg.Plist, "plist", "packaging/Info.plist", "Info.plist template")
-	flag.StringVar(&cfg.Icon, "icon", "Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png", "source app icon")
+	flag.StringVar(&cfg.Icon, "icon", "packaging/icon.png", "source app icon")
 	flag.StringVar(&cfg.AppName, "app-name", "rterm", "app bundle and volume name")
 	flag.StringVar(&cfg.VolumeName, "volume-name", "rterm", "mounted volume name")
 	flag.BoolVar(&cfg.AllowNonMachO, "allow-non-macho", false, "accept a non-Mach-O executable (smoke test only)")

@@ -70,6 +70,8 @@ Locally: `mise release minor`. A DMG without a GitHub release: `VERSION=0.1.0-de
 
 `mise package` builds a universal (arm64 + x86_64) `rterm.app` and a styled installer DMG. It works on Linux and macOS: the HFS+ volume and the Finder `.DS_Store` are written by `packaging/dmg` in Go, so no `hdiutil` or `iconutil` is needed. The mounted DMG opens a Finder window with `rterm.app` on the left and an Applications drop link on the right. `VERSION=<tag> mise package --from-dist` packs slices that GoReleaser already built in `dist/`.
 
+The app icon is one file, `packaging/icon.png`. `build.rs` derives every macOS icon size from it, and the packager derives the ICNS from the same file. No generated image is committed.
+
 The DMG is unsigned. First open: right-click rterm → Open.
 
 Design rules live in [SPEC.md](SPEC.md).
