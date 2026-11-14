@@ -43,6 +43,21 @@ stage="$root/build/dmg"
 dmg="$artifacts/rterm-$version.dmg"
 [[ "$mode" == "--smoke" ]] || mkdir -p "$artifacts"
 
+# The Darwin cross-build needs Rust's standard library for each target.
+# GoReleaser's Rust builder installs them itself, but `mise release` runs this
+# script first, so on a fresh runner the target is missing and the build fails
+# with "can't find crate for `core`". Install it here when rustup is around.
+ensure_target() {
+  local target="$1"
+  if ! command -v rustup >/dev/null 2>&1; then
+    return
+  fi
+  if ! rustup target list --installed 2>/dev/null | grep -qx "$target"; then
+    echo "package-dmg: rustup target add $target"
+    rustup target add "$target"
+  fi
+}
+
 arm64=""
 amd64=""
 
@@ -73,6 +88,7 @@ else
     if [[ "$(uname)" == Darwin ]]; then
       cargo build --locked --release --target "$target"
     else
+      ensure_target "$target"
       SDKROOT="$HOME/.cache/rterm/MacOSX14.5.sdk" \
         MACOSX_DEPLOYMENT_TARGET=14.0 \
         cargo zigbuild --locked --release --target "$target"
