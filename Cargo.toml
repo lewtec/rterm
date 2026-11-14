@@ -5,6 +5,10 @@ edition = "2024"
 publish = false
 description = "One window of detachable herdr, tmux, and screen places"
 
+[build-dependencies]
+# Generates the icon set from packaging/icon.png in build.rs.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 [dependencies]
 ab_glyph = "0.2.32"
 arboard = { version = "3", default-features = false, features = ["image-data"] }

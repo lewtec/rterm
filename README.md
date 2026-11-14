@@ -62,12 +62,16 @@ Same operator API as the other lewtec repos:
 
 1. GitHub → Actions → Autorelease → Run workflow
 2. Pick `next`, `patch`, `minor`, or `major`
-3. GoReleaser builds the default Rust targets and publishes the archives
+3. GoReleaser builds the default Rust targets, attaches the universal DMG, and publishes the release
 
 First release: pick **minor** (`0.1.0`). There are no tags yet, so `patch` would mint `0.0.1`.
 
-Locally: `mise release minor`. A DMG without a GitHub release, on macOS: `VERSION=0.1.0-dev mise package`.
+Locally: `mise release minor`. A DMG without a GitHub release: `VERSION=0.1.0-dev mise package`.
 
-rterm ships the DMG with no signature. First open: right-click rterm → Open.
+`mise package` builds a universal (arm64 + x86_64) `rterm.app` and a styled installer DMG. It works on Linux and macOS: the HFS+ volume and the Finder `.DS_Store` are written by `packaging/dmg` in Go, so no `hdiutil` or `iconutil` is needed. The mounted DMG opens a Finder window with `rterm.app` on the left and an Applications drop link on the right. `VERSION=<tag> mise package --from-dist` packs slices that GoReleaser already built in `dist/`.
+
+The app icon is one file, `packaging/icon.png`. `build.rs` derives every macOS icon size from it, and the packager derives the ICNS from the same file. No generated image is committed.
+
+The DMG is unsigned. First open: right-click rterm → Open.
 
 Design rules live in [SPEC.md](SPEC.md).

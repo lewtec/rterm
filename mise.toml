@@ -2,6 +2,9 @@
 # prefixes because the host `cc` shim is not a compiler rustc can run.
 [tools]
 rust = { version = "1.93.0", components = ["rustfmt", "clippy"] }
+# Go is only for packaging/dmg: the pure-Go HFS+ and .DS_Store writer that
+# builds the installer DMG on any host.
+go = "1.27.2"
 goreleaser = "2.18.3"
 svu = "3.3.0"
 zig = "0.16.0"
@@ -39,16 +42,30 @@ alias = "default"
 run = "bash scripts/cargo.sh run --locked"
 
 [tasks.package]
-description = "Build a Release DMG into artifacts/ (macOS)"
+description = "Build a styled installer DMG into artifacts/ (Linux or macOS)"
 run = "bash scripts/package-dmg.sh"
+
+[tasks."package:check"]
+description = "Lint the packager and build a DMG from a stub app"
+run = '''
+set -euo pipefail
+unformatted="$(gofmt -l packaging/dmg)"
+if [[ -n "$unformatted" ]]; then
+  echo "package:check: gofmt needed:" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi
+go -C packaging/dmg vet ./...
+bash scripts/package-dmg.sh --smoke
+'''
 
 [tasks."release:check"]
 description = "Validate .goreleaser.yaml"
 run = "goreleaser check"
 
 [tasks.ci]
-description = "Format, lint, test, and build"
-depends = ["fmt:check", "lint", "test", "build"]
+description = "Format, lint, test, build, and check packaging"
+depends = ["fmt:check", "lint", "test", "build", "package:check"]
 
 [tasks.release]
 description = "Tag with svu and publish with GoReleaser"
@@ -68,18 +85,14 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
   exit 1
 fi
 git tag "$TAG"
-if [[ "$(uname)" == Darwin ]]; then
-  if ! VERSION="$TAG" bash scripts/package-dmg.sh; then
-    git tag -d "$TAG"
-    exit 1
-  fi
+rm -rf artifacts
+if ! VERSION="$TAG" bash scripts/package-dmg.sh; then
+  git tag -d "$TAG"
+  exit 1
 fi
 if ! goreleaser release --clean; then
   git tag -d "$TAG"
   exit 1
-fi
-if compgen -G "artifacts/*.dmg" >/dev/null; then
-  gh release upload "$TAG" artifacts/*.dmg --clobber
 fi
 git push origin "refs/tags/$TAG"
 '''

@@ -3,3 +3,6 @@
 build/
 artifacts/
 dist/
+
+# Generated from packaging/icon.png by build.rs.
+/Assets.xcassets/AppIcon.appiconset/*.png

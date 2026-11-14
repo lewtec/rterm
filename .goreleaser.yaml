@@ -51,6 +51,8 @@ archives:
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+  extra_files:
+    - glob: artifacts/*.dmg
 
 snapshot:
   version_template: "{{ .Tag }}-next"
@@ -66,6 +68,8 @@ changelog:
       - Merge branch
 
 release:
+  extra_files:
+    - glob: artifacts/*.dmg
   footer: >-
 
     ---

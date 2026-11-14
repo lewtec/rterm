@@ -1,19 +1,34 @@
 #!/usr/bin/env bash
-# Build a Release .app and wrap it in artifacts/rterm-<version>.dmg.
+# Build the universal rterm.app and wrap it in artifacts/rterm-<version>.dmg.
+#
+# Runs on Linux and macOS. The HFS+ volume, the UDIF container, and the Finder
+# .DS_Store are written by packaging/dmg (pure Go), so there is no hdiutil or
+# iconutil dependency. The mounted DMG opens a window with rterm.app on the
+# left and an Applications drop link on the right.
+#
 # VERSION comes from the environment, or from an exact git tag.
-# Runs on macOS. Linux releases ship the GoReleaser binary instead.
+#
+#   scripts/package-dmg.sh              cross-build both Darwin slices, then pack
+#   scripts/package-dmg.sh --from-dist  pack the slices GoReleaser left in dist/
+#   scripts/package-dmg.sh --smoke      pack a stub app; tests the packager
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-if [[ "$(uname)" != Darwin ]]; then
-  echo "package-dmg: run this on macOS" >&2
-  exit 1
-fi
+mode="${1:-build}"
+case "$mode" in
+  build | --from-dist | --smoke) ;;
+  *)
+    echo "usage: $0 [--from-dist|--smoke]" >&2
+    exit 2
+    ;;
+esac
 
 version="${VERSION:-}"
-if [[ -z "$version" ]]; then
+if [[ "$mode" == "--smoke" ]]; then
+  version="${version:-0.0.0-smoke}"
+elif [[ -z "$version" ]]; then
   if tag="$(git describe --tags --exact-match 2>/dev/null)"; then
     version="$tag"
   fi
@@ -23,45 +38,65 @@ if [[ -z "$version" ]]; then
   exit 1
 fi
 
-stage="$root/build/dmg"
 artifacts="$root/artifacts"
-app_name="rterm"
-app="$stage/${app_name}.app"
-dmg="$artifacts/${app_name}-${version}.dmg"
+stage="$root/build/dmg"
+dmg="$artifacts/rterm-$version.dmg"
+[[ "$mode" == "--smoke" ]] || mkdir -p "$artifacts"
 
-rm -rf "$stage"
-mkdir -p "$stage" "$artifacts" "$app/Contents/MacOS" "$app/Contents/Resources"
+arm64=""
+amd64=""
 
-export RTERM_VERSION="$version"
-bash scripts/cargo.sh build --locked --release
-cp "$root/target/release/rterm" "$app/Contents/MacOS/rterm"
-chmod +x "$app/Contents/MacOS/rterm"
+if [[ "$mode" == "--smoke" ]]; then
+  # The packager is exercised with a stub executable: the bundle and Finder
+  # layout are what this mode validates, not the Rust binary. Keep the smoke
+  # image out of artifacts/ so a release never picks it up.
+  stage="$root/build/dmg-smoke"
+  dmg="$root/build/rterm-$version.dmg"
+  mkdir -p "$stage"
+  stub="$root/build/rterm-stub"
+  printf '#!/bin/sh\nexit 0\n' >"$stub"
+  chmod +x "$stub"
+  arm64="$stub"
+elif [[ "$mode" == "--from-dist" ]]; then
+  arm64="$root/dist/rterm_aarch64-apple-darwin/rterm"
+  amd64="$root/dist/rterm_x86_64-apple-darwin/rterm"
+  [[ -f "$arm64" ]] || arm64=""
+  [[ -f "$amd64" ]] || amd64=""
+  if [[ -z "$arm64" && -z "$amd64" ]]; then
+    echo "package-dmg: no Darwin binaries in dist/; run goreleaser or drop --from-dist" >&2
+    exit 1
+  fi
+else
+  bash scripts/macos-sdk.sh
+  export RTERM_VERSION="$version"
+  for target in aarch64-apple-darwin x86_64-apple-darwin; do
+    if [[ "$(uname)" == Darwin ]]; then
+      cargo build --locked --release --target "$target"
+    else
+      SDKROOT="$HOME/.cache/rterm/MacOSX14.5.sdk" \
+        MACOSX_DEPLOYMENT_TARGET=14.0 \
+        cargo zigbuild --locked --release --target "$target"
+    fi
+  done
+  arm64="$root/target/aarch64-apple-darwin/release/rterm"
+  amd64="$root/target/x86_64-apple-darwin/release/rterm"
+fi
 
-sed "s/__VERSION__/${version}/g" packaging/Info.plist > "$app/Contents/Info.plist"
-printf 'APPL????' > "$app/Contents/PkgInfo"
+flags=(
+  -version "$version"
+  -output "$dmg"
+  -stage "$stage"
+  -plist "$root/packaging/Info.plist"
+  -icon "$root/packaging/icon.png"
+)
+[[ -n "$arm64" ]] && flags+=(-arm64 "$arm64")
+[[ -n "$amd64" ]] && flags+=(-amd64 "$amd64")
+[[ "$mode" == "--smoke" ]] && flags+=(-allow-non-macho)
 
-iconset="$stage/AppIcon.iconset"
-mkdir -p "$iconset"
-src_icon="$root/Assets.xcassets/AppIcon.appiconset"
-cp "$src_icon/icon_16x16.png" "$iconset/icon_16x16.png"
-cp "$src_icon/icon_16x16@2x.png" "$iconset/icon_16x16@2x.png"
-cp "$src_icon/icon_32x32.png" "$iconset/icon_32x32.png"
-cp "$src_icon/icon_32x32@2x.png" "$iconset/icon_32x32@2x.png"
-cp "$src_icon/icon_128x128.png" "$iconset/icon_128x128.png"
-cp "$src_icon/icon_128x128@2x.png" "$iconset/icon_128x128@2x.png"
-cp "$src_icon/icon_256x256.png" "$iconset/icon_256x256.png"
-cp "$src_icon/icon_256x256@2x.png" "$iconset/icon_256x256@2x.png"
-cp "$src_icon/icon_512x512.png" "$iconset/icon_512x512.png"
-cp "$src_icon/icon_512x512@2x.png" "$iconset/icon_512x512@2x.png"
-iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+if ! command -v go >/dev/null 2>&1; then
+  echo "package-dmg: go not found; run 'mise run package' so mise puts Go on PATH" >&2
+  exit 1
+fi
 
-ln -s /Applications "$stage/Applications"
-rm -f "$dmg"
-hdiutil create \
-  -volname "$app_name" \
-  -srcfolder "$stage" \
-  -ov \
-  -format UDZO \
-  "$dmg"
-
+go -C packaging/dmg run . "${flags[@]}"
 echo "package-dmg: $dmg"
