@@ -8,9 +8,12 @@ import (
 	"os"
 )
 
-// The background is drawn at twice the Finder window's point size so the DMG
-// looks sharp on Retina displays. Finder scales it to the window.
-const backgroundScale = 2
+// Finder draws a background picture at one image pixel per point, anchored at
+// the window's top-left corner; it does not scale the image to fit the window.
+// The image must therefore be exactly the window's point size. Drawing it at
+// 2x (the obvious Retina choice) makes Finder render everything at double size
+// and push the lower half of the design, label plates included, out of view.
+const backgroundScale = 1
 
 // palette matches the app icon: near-black navy with a cyan glow.
 var (
