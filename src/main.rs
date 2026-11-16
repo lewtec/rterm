@@ -3,6 +3,7 @@ mod appearance;
 mod clip;
 mod fill;
 mod gui;
+mod icons;
 mod keys;
 mod liga;
 mod mac_paste;

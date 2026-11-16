@@ -860,7 +860,7 @@ impl RtermApp {
         } else {
             ui.visuals().text_color()
         };
-        paint_settings_icon(ui.painter(), rect, color);
+        crate::icons::paint_wrench(ui.painter(), rect, color);
         if response.clicked() {
             self.settings_open = !self.settings_open;
             if self.settings_open {
@@ -1094,25 +1094,23 @@ impl RtermApp {
                                             }
                                             let up = index > 0;
                                             let down = index + 1 < places.len();
-                                            if ui
-                                                .add_enabled(
-                                                    up,
-                                                    egui::Button::new("↑")
-                                                        .min_size(egui::vec2(24.0, 20.0)),
-                                                )
-                                                .on_hover_text("Move up")
-                                                .clicked()
+                                            if icon_button(
+                                                ui,
+                                                up,
+                                                crate::icons::paint_arrow_up,
+                                                "Move up",
+                                            )
+                                            .clicked()
                                             {
                                                 reorder = Some((place.id, places[index - 1].id));
                                             }
-                                            if ui
-                                                .add_enabled(
-                                                    down,
-                                                    egui::Button::new("↓")
-                                                        .min_size(egui::vec2(24.0, 20.0)),
-                                                )
-                                                .on_hover_text("Move down")
-                                                .clicked()
+                                            if icon_button(
+                                                ui,
+                                                down,
+                                                crate::icons::paint_arrow_down,
+                                                "Move down",
+                                            )
+                                            .clicked()
                                             {
                                                 reorder = Some((place.id, places[index + 1].id));
                                             }
@@ -1229,35 +1227,6 @@ fn can_save(editor: &PlaceEditorState) -> bool {
     save_issue(editor).is_none()
 }
 
-/// Lucide `sliders-horizontal` (ISC), 24×24 viewBox.
-/// Source: https://lucide.dev/icons/sliders-horizontal
-const SETTINGS_ICON_LINES: &[((f32, f32), (f32, f32))] = &[
-    ((21.0, 4.0), (14.0, 4.0)),
-    ((10.0, 4.0), (3.0, 4.0)),
-    ((21.0, 12.0), (12.0, 12.0)),
-    ((8.0, 12.0), (3.0, 12.0)),
-    ((21.0, 20.0), (16.0, 20.0)),
-    ((12.0, 20.0), (3.0, 20.0)),
-    ((14.0, 2.0), (14.0, 6.0)),
-    ((8.0, 10.0), (8.0, 14.0)),
-    ((16.0, 18.0), (16.0, 22.0)),
-];
-
-fn paint_settings_icon(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
-    let scale = rect.width().min(rect.height()) / 24.0;
-    let origin = rect.center() - egui::vec2(12.0 * scale, 12.0 * scale);
-    let point = |(x, y): (f32, f32)| origin + egui::vec2(x * scale, y * scale);
-    let stroke = egui::Stroke::new((2.0 * scale).max(1.4), color);
-    for (start, end) in SETTINGS_ICON_LINES {
-        painter.line_segment([point(*start), point(*end)], stroke);
-    }
-    // egui draws butt caps; add circles to match Lucide's round line caps.
-    for (start, end) in SETTINGS_ICON_LINES {
-        painter.circle_filled(point(*start), stroke.width / 2.0, color);
-        painter.circle_filled(point(*end), stroke.width / 2.0, color);
-    }
-}
-
 /// Clicks and drags stay on the pointer. Tab and Enter belong to the terminal.
 fn pointer_sense(drag: bool) -> egui::Sense {
     if drag {
@@ -1331,6 +1300,25 @@ fn dot(ui: &mut egui::Ui, color: egui::Color32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), pointer_sense(false));
     ui.painter().circle_filled(rect.center(), 6.0, color);
     response
+}
+
+fn icon_button(
+    ui: &mut egui::Ui,
+    enabled: bool,
+    paint: fn(&egui::Painter, egui::Rect, egui::Color32),
+    hover: &str,
+) -> egui::Response {
+    let response = ui.add_enabled(
+        enabled,
+        egui::Button::new("").min_size(egui::vec2(24.0, 20.0)),
+    );
+    let color = if enabled {
+        ui.visuals().text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    paint(ui.painter(), response.rect.shrink(3.0), color);
+    response.on_hover_text(hover)
 }
 
 fn paint_status(ui: &egui::Ui, center: egui::Pos2, state: &TabState) {
