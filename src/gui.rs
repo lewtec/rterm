@@ -61,6 +61,7 @@ pub struct RtermApp {
     ime_terminal: bool,
     drag_from: Option<Uuid>,
     tab_rects: Vec<(Uuid, egui::Rect)>,
+    tab_scroll: f32,
     appearance: crate::appearance::Appearance,
     faces: Vec<crate::appearance::Face>,
     applied_font: Option<String>,
@@ -89,6 +90,7 @@ impl RtermApp {
             ime_terminal: false,
             drag_from: None,
             tab_rects: Vec::new(),
+            tab_scroll: 0.0,
             appearance: crate::appearance::load(&crate::appearance::path()),
             faces: crate::appearance::faces(),
             applied_font: None,
@@ -549,38 +551,46 @@ impl RtermApp {
         let width = cap.max(0.0);
         let strip = egui::Rect::from_min_size(
             ui.available_rect_before_wrap().min,
-            egui::vec2(width, ui.available_height()),
+            egui::vec2(width, 22.0),
         );
-        // Chrome scrolls the tab strip with the wheel, not just a trackpad.
+        let mut wheel = egui::Vec2::ZERO;
         if ui.rect_contains_pointer(strip) {
-            let delta = ui.input(|input| input.smooth_scroll_delta);
-            if delta.y != 0.0 && delta.x == 0.0 {
-                ui.input_mut(|input| {
-                    input.smooth_scroll_delta.x += input.smooth_scroll_delta.y;
-                    input.smooth_scroll_delta.y = 0.0;
-                });
+            wheel = ui.input(|input| input.smooth_scroll_delta);
+            if wheel != egui::Vec2::ZERO {
+                // The strip owns the wheel while hovered, so no other scroll
+                // area reacts to the same event.
+                ui.input_mut(|input| input.smooth_scroll_delta = egui::Vec2::ZERO);
             }
         }
-        ui.allocate_ui_with_layout(
-            egui::vec2(width, ui.available_height()),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.spacing_mut().item_spacing.x = TAB_GAP;
-                egui::ScrollArea::horizontal()
-                    .id_salt(salt)
-                    .scroll_bar_visibility(
-                        egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
-                    )
-                    .drag_to_scroll(false)
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            for place in places {
-                                self.tab(ui, place, tab_width(place) as f32);
-                            }
-                        });
-                    });
-            },
-        );
+        // Trackpad horizontal scroll wins; a plain mouse wheel scrolls the tabs.
+        let delta = if wheel.x != 0.0 { wheel.x } else { wheel.y };
+        let offset = (self.tab_scroll - delta).max(0.0);
+        self.tab_scroll = ui
+            .allocate_ui_with_layout(
+                egui::vec2(width, ui.available_height()),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = TAB_GAP;
+                    egui::ScrollArea::horizontal()
+                        .id_salt(salt)
+                        .scroll_bar_visibility(
+                            egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                        )
+                        .drag_to_scroll(false)
+                        .horizontal_scroll_offset(offset)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                for place in places {
+                                    self.tab(ui, place, tab_width(place) as f32);
+                                }
+                            });
+                        })
+                },
+            )
+            .inner
+            .state
+            .offset
+            .x;
     }
 
     fn terminal_mode(&self) -> (u16, bool) {
