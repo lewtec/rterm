@@ -21,6 +21,12 @@ use crate::sleep_watch::SleepWatch;
 const ROW_HEIGHT: f32 = 28.0;
 const TRAFFIC_WIDTH: f32 = 78.0;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettingsTab {
+    Appearance,
+    Places,
+}
+
 struct PasteRun {
     place_id: Uuid,
     generation: u32,
@@ -61,6 +67,7 @@ pub struct RtermApp {
     terminal_font: Option<crate::liga::TerminalFont>,
     liga_cache: std::collections::HashMap<(u16, u32), LigaGlyph>,
     settings_open: bool,
+    settings_tab: SettingsTab,
     paste: PasteRun,
     paste_token: u64,
     lock: Option<std::fs::File>,
@@ -87,6 +94,7 @@ impl RtermApp {
             terminal_font: None,
             liga_cache: std::collections::HashMap::new(),
             settings_open: false,
+            settings_tab: SettingsTab::Appearance,
             paste: PasteRun {
                 place_id: Uuid::nil(),
                 generation: 0,
@@ -852,7 +860,7 @@ impl RtermApp {
         } else {
             ui.visuals().text_color()
         };
-        paint_wrench(ui.painter(), rect, color);
+        paint_settings_icon(ui.painter(), rect, color);
         if response.clicked() {
             self.settings_open = !self.settings_open;
             if self.settings_open {
@@ -978,62 +986,163 @@ impl RtermApp {
         }
         let mut open = true;
         let mut done = false;
+        let mut tab = self.settings_tab;
         let size = self.appearance.size;
         let current = self.appearance.font.clone();
         let mut next_size = None;
         let mut next_font = None;
         let mut listed = None;
+        let places = self.store.places.clone();
+        let selected_id = self.store.selected_id;
+        let mut reorder = None;
+        let mut select_place = None;
+        let mut add_place = false;
         sheet(ctx, "settings", &mut open, |ui| {
-            ui.set_min_width(360.0);
-            ui.label(egui::RichText::new("Settings").size(18.0));
-            ui.add_space(10.0);
-            ui.label("Font");
-            let shown = if current == crate::appearance::BUILT_IN {
-                crate::appearance::BUILT_IN
-            } else {
-                current.as_str()
-            };
-            egui::ComboBox::from_id_salt("terminal-font")
-                .selected_text(shown)
-                .width(260.0)
-                .show_ui(ui, |ui| {
-                    let faces = crate::appearance::faces();
-                    if ui
-                        .selectable_label(current == crate::appearance::BUILT_IN, "Built-in")
-                        .clicked()
-                    {
-                        next_font = Some(crate::appearance::BUILT_IN.to_string());
-                    }
-                    for face in &faces {
-                        if ui
-                            .selectable_label(current == face.name, face.name.as_str())
-                            .clicked()
-                        {
-                            next_font = Some(face.name.clone());
-                        }
-                    }
-                    listed = Some(faces);
-                });
-            ui.add_space(8.0);
-            ui.label("Size");
+            ui.set_min_width(420.0);
             ui.horizontal(|ui| {
-                if ui.button("−").on_hover_text("Smaller").clicked() {
-                    next_size = Some(size - 1.0);
-                }
-                ui.monospace(format!("{size:.0}"));
-                if ui.button("+").on_hover_text("Larger").clicked() {
-                    next_size = Some(size + 1.0);
-                }
+                ui.label(egui::RichText::new("Settings").size(18.0));
+                ui.add_space(12.0);
+                ui.selectable_value(&mut tab, SettingsTab::Appearance, "Appearance");
+                ui.selectable_value(&mut tab, SettingsTab::Places, "Places");
             });
+            ui.add_space(6.0);
+            ui.separator();
             ui.add_space(8.0);
-            font_preview(self, ui, size);
+            match tab {
+                SettingsTab::Appearance => {
+                    ui.label("Font");
+                    let shown = if current == crate::appearance::BUILT_IN {
+                        crate::appearance::BUILT_IN
+                    } else {
+                        current.as_str()
+                    };
+                    egui::ComboBox::from_id_salt("terminal-font")
+                        .selected_text(shown)
+                        .width(260.0)
+                        .show_ui(ui, |ui| {
+                            let faces = crate::appearance::faces();
+                            if ui
+                                .selectable_label(
+                                    current == crate::appearance::BUILT_IN,
+                                    "Built-in",
+                                )
+                                .clicked()
+                            {
+                                next_font = Some(crate::appearance::BUILT_IN.to_string());
+                            }
+                            for face in &faces {
+                                if ui
+                                    .selectable_label(current == face.name, face.name.as_str())
+                                    .clicked()
+                                {
+                                    next_font = Some(face.name.clone());
+                                }
+                            }
+                            listed = Some(faces);
+                        });
+                    ui.add_space(8.0);
+                    ui.label("Size");
+                    ui.horizontal(|ui| {
+                        if ui.button("−").on_hover_text("Smaller").clicked() {
+                            next_size = Some(size - 1.0);
+                        }
+                        ui.monospace(format!("{size:.0}"));
+                        if ui.button("+").on_hover_text("Larger").clicked() {
+                            next_size = Some(size + 1.0);
+                        }
+                    });
+                    ui.add_space(8.0);
+                    font_preview(self, ui, size);
+                }
+                SettingsTab::Places => {
+                    ui.label("Tab order");
+                    ui.label(
+                        egui::RichText::new(
+                            "Drag tabs in the title bar, or move a place with the arrows.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    ui.add_space(8.0);
+                    if places.is_empty() {
+                        ui.label(egui::RichText::new("No places yet.").weak());
+                        if ui.button("Add Place…").clicked() {
+                            add_place = true;
+                        }
+                    } else {
+                        egui::ScrollArea::vertical()
+                            .max_height(280.0)
+                            .show(ui, |ui| {
+                                egui::Grid::new("settings-places")
+                                    .num_columns(4)
+                                    .spacing(egui::vec2(8.0, 4.0))
+                                    .show(ui, |ui| {
+                                        for (index, place) in places.iter().enumerate() {
+                                            ui.label(
+                                                egui::RichText::new(format!("{:02}", index + 1))
+                                                    .monospace()
+                                                    .weak(),
+                                            );
+                                            if ui
+                                                .selectable_label(
+                                                    selected_id == Some(place.id),
+                                                    place.display_label(),
+                                                )
+                                                .clicked()
+                                            {
+                                                select_place = Some(place.id);
+                                            }
+                                            let up = index > 0;
+                                            let down = index + 1 < places.len();
+                                            if ui
+                                                .add_enabled(
+                                                    up,
+                                                    egui::Button::new("↑")
+                                                        .min_size(egui::vec2(24.0, 20.0)),
+                                                )
+                                                .on_hover_text("Move up")
+                                                .clicked()
+                                            {
+                                                reorder = Some((place.id, places[index - 1].id));
+                                            }
+                                            if ui
+                                                .add_enabled(
+                                                    down,
+                                                    egui::Button::new("↓")
+                                                        .min_size(egui::vec2(24.0, 20.0)),
+                                                )
+                                                .on_hover_text("Move down")
+                                                .clicked()
+                                            {
+                                                reorder = Some((place.id, places[index + 1].id));
+                                            }
+                                            ui.end_row();
+                                        }
+                                    });
+                            });
+                    }
+                }
+            }
             ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Done").clicked() {
                     done = true;
                 }
             });
         });
+        self.settings_tab = tab;
+        if let Some((id, onto)) = reorder {
+            self.store.move_place(id, onto);
+        }
+        if let Some(id) = select_place {
+            self.store.select(id);
+        }
+        if add_place {
+            self.start_add();
+            open = false;
+        }
         if let Some(size) = next_size {
             self.appearance.size = size;
             self.store_appearance();
@@ -1120,21 +1229,33 @@ fn can_save(editor: &PlaceEditorState) -> bool {
     save_issue(editor).is_none()
 }
 
-fn paint_wrench(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
-    let center = rect.center();
-    let point = |x: f32, y: f32| center + egui::vec2(x, y);
-    // Open jaw, then the handle. A closed ring reads as a magnifying glass.
-    let mut jaw = Vec::new();
-    let head = point(-2.2, -3.4);
-    for step in 0..=14 {
-        let angle = -0.4 + step as f32 * (4.4 / 14.0);
-        jaw.push(head + egui::vec2(angle.cos(), angle.sin()) * 3.5);
+/// Lucide `sliders-horizontal` (ISC), 24×24 viewBox.
+/// Source: https://lucide.dev/icons/sliders-horizontal
+const SETTINGS_ICON_LINES: &[((f32, f32), (f32, f32))] = &[
+    ((21.0, 4.0), (14.0, 4.0)),
+    ((10.0, 4.0), (3.0, 4.0)),
+    ((21.0, 12.0), (12.0, 12.0)),
+    ((8.0, 12.0), (3.0, 12.0)),
+    ((21.0, 20.0), (16.0, 20.0)),
+    ((12.0, 20.0), (3.0, 20.0)),
+    ((14.0, 2.0), (14.0, 6.0)),
+    ((8.0, 10.0), (8.0, 14.0)),
+    ((16.0, 18.0), (16.0, 22.0)),
+];
+
+fn paint_settings_icon(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    let scale = rect.width().min(rect.height()) / 24.0;
+    let origin = rect.center() - egui::vec2(12.0 * scale, 12.0 * scale);
+    let point = |(x, y): (f32, f32)| origin + egui::vec2(x * scale, y * scale);
+    let stroke = egui::Stroke::new((2.0 * scale).max(1.4), color);
+    for (start, end) in SETTINGS_ICON_LINES {
+        painter.line_segment([point(*start), point(*end)], stroke);
     }
-    jaw.push(point(5.4, 6.2));
-    painter.add(egui::Shape::Path(egui::epaint::PathShape::line(
-        jaw,
-        egui::Stroke::new(2.3, color),
-    )));
+    // egui draws butt caps; add circles to match Lucide's round line caps.
+    for (start, end) in SETTINGS_ICON_LINES {
+        painter.circle_filled(point(*start), stroke.width / 2.0, color);
+        painter.circle_filled(point(*end), stroke.width / 2.0, color);
+    }
 }
 
 /// Clicks and drags stay on the pointer. Tab and Enter belong to the terminal.
