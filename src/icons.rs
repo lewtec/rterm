@@ -9,8 +9,15 @@ use eframe::egui;
 /// Lucide `wrench`.
 const WRENCH: &str = "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z";
 
+/// Lucide `x`.
+const X: &str = "M18 6 6 18 M6 6 12 12";
+
 pub fn paint_wrench(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
     paint_icon(painter, rect, color, WRENCH);
+}
+
+pub fn paint_x(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    paint_icon(painter, rect, color, X);
 }
 
 fn paint_icon(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32, path: &str) {
@@ -331,7 +338,7 @@ fn vector_angle(ux: f32, uy: f32, vx: f32, vy: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{WRENCH, parse_path, tokenize};
+    use super::{WRENCH, X, parse_path, tokenize};
 
     #[test]
     fn wrench_is_one_closed_subpath() {
@@ -343,6 +350,13 @@ mod tests {
             assert!((-1.0..=25.0).contains(x));
             assert!((-1.0..=25.0).contains(y));
         }
+    }
+
+    #[test]
+    fn x_is_two_open_subpaths() {
+        let subpaths = parse_path(X);
+        assert_eq!(subpaths.len(), 2);
+        assert!(subpaths.iter().all(|subpath| !subpath.closed));
     }
 
     #[test]
