@@ -544,10 +544,7 @@ impl RtermApp {
         let width = cap.max(0.0);
         let height = 22.0;
         let (strip, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-        let widths: Vec<f32> = places
-            .iter()
-            .map(|place| tab_width(place) as f32)
-            .collect();
+        let widths: Vec<f32> = places.iter().map(|place| tab_width(place) as f32).collect();
         let gaps = TAB_GAP * places.len().saturating_sub(1) as f32;
         let content = widths.iter().sum::<f32>() + gaps;
         let max = (content - strip.width()).max(0.0);
@@ -566,7 +563,8 @@ impl RtermApp {
         let painter = ui.painter().with_clip_rect(strip);
         let mut x = strip.left() - self.tab_scroll;
         for (place, width) in places.iter().zip(widths) {
-            let rect = egui::Rect::from_min_size(egui::pos2(x, strip.top()), egui::vec2(width, height));
+            let rect =
+                egui::Rect::from_min_size(egui::pos2(x, strip.top()), egui::vec2(width, height));
             x += width + TAB_GAP;
             let visible = rect.intersect(strip);
             if visible.width() <= 0.5 {
@@ -675,7 +673,7 @@ impl RtermApp {
             painter.rect_stroke(
                 rect,
                 10.0,
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 140, 220)),
+                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(80, 140, 220)),
                 egui::StrokeKind::Inside,
             );
         }
@@ -1090,14 +1088,11 @@ impl RtermApp {
                 SettingsTab::Places => {
                     ui.horizontal(|ui| {
                         ui.label("Tab order");
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                if plus_button(ui, "Add place").clicked() {
-                                    add_place = true;
-                                }
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if plus_button(ui, "Add place").clicked() {
+                                add_place = true;
+                            }
+                        });
                     });
                     ui.label(
                         egui::RichText::new(
