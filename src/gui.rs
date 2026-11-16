@@ -68,6 +68,7 @@ pub struct RtermApp {
     liga_cache: std::collections::HashMap<(u16, u32), LigaGlyph>,
     settings_open: bool,
     settings_tab: SettingsTab,
+    settings_drag: Option<Uuid>,
     paste: PasteRun,
     paste_token: u64,
     lock: Option<std::fs::File>,
@@ -95,6 +96,7 @@ impl RtermApp {
             liga_cache: std::collections::HashMap::new(),
             settings_open: false,
             settings_tab: SettingsTab::Appearance,
+            settings_drag: None,
             paste: PasteRun {
                 place_id: Uuid::nil(),
                 generation: 0,
@@ -545,10 +547,28 @@ impl RtermApp {
 
     fn place_tabs(&mut self, ui: &mut egui::Ui, places: &[Place], cap: f32, salt: &str) {
         let width = cap.max(0.0);
+        let gaps = TAB_GAP * places.len().saturating_sub(1) as f32;
+        let available = f64::from((width - gaps).max(0.0));
+        let widths = tab_widths(places, available);
+        let strip = egui::Rect::from_min_size(
+            ui.available_rect_before_wrap().min,
+            egui::vec2(width, ui.available_height()),
+        );
+        // Chrome scrolls the tab strip with the wheel, not just a trackpad.
+        if ui.rect_contains_pointer(strip) {
+            let delta = ui.input(|input| input.smooth_scroll_delta);
+            if delta.y != 0.0 && delta.x == 0.0 {
+                ui.input_mut(|input| {
+                    input.smooth_scroll_delta.x += input.smooth_scroll_delta.y;
+                    input.smooth_scroll_delta.y = 0.0;
+                });
+            }
+        }
         ui.allocate_ui_with_layout(
             egui::vec2(width, ui.available_height()),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
+                ui.spacing_mut().item_spacing.x = TAB_GAP;
                 egui::ScrollArea::horizontal()
                     .id_salt(salt)
                     .scroll_bar_visibility(
@@ -557,8 +577,8 @@ impl RtermApp {
                     .drag_to_scroll(false)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            for place in places {
-                                self.tab(ui, place);
+                            for (place, width) in places.iter().zip(widths) {
+                                self.tab(ui, place, width as f32);
                             }
                         });
                     });
@@ -637,7 +657,7 @@ impl RtermApp {
         }
     }
 
-    fn tab(&mut self, ui: &mut egui::Ui, place: &Place) {
+    fn tab(&mut self, ui: &mut egui::Ui, place: &Place, width: f32) {
         let selected = self.store.selected_id == Some(place.id);
         let state = self.store.tab_state(place.id);
         let fill = if selected {
@@ -645,10 +665,8 @@ impl RtermApp {
         } else {
             egui::Color32::TRANSPARENT
         };
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(tab_width(place) as f32, 22.0),
-            pointer_sense(true),
-        );
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 22.0), pointer_sense(true));
         self.tab_rects.push((place.id, rect));
         ui.painter().rect_filled(rect, 10.0, fill);
         if selected {
@@ -661,7 +679,14 @@ impl RtermApp {
         }
         let dot_center = rect.left_center() + egui::vec2(12.0, 0.0);
         paint_status(ui, dot_center, &state);
-        ui.painter().text(
+        let text = egui::Rect::from_min_max(
+            rect.left_center() + egui::vec2(20.0, -10.0),
+            rect.right_center() + egui::vec2(-4.0, 10.0),
+        );
+        let painter = ui
+            .painter()
+            .with_clip_rect(text.intersect(ui.clip_rect()));
+        painter.text(
             rect.left_center() + egui::vec2(20.0, 0.0),
             egui::Align2::LEFT_CENTER,
             place.display_label(),
@@ -860,11 +885,13 @@ impl RtermApp {
         } else {
             ui.visuals().text_color()
         };
-        crate::icons::paint_wrench(ui.painter(), rect, color);
+        crate::icons::paint_wrench(ui.painter(), rect.shrink(4.0), color);
         if response.clicked() {
             self.settings_open = !self.settings_open;
             if self.settings_open {
                 self.store.editor = None;
+            } else {
+                self.settings_drag = None;
             }
         }
         response.on_hover_text("Settings");
@@ -994,6 +1021,10 @@ impl RtermApp {
         let mut listed = None;
         let places = self.store.places.clone();
         let selected_id = self.store.selected_id;
+        let pointer_released = ctx.input(|input| input.pointer.any_released());
+        let pointer_pos = ctx.input(|input| input.pointer.interact_pos());
+        let mut drag = self.settings_drag;
+        let mut row_rects: Vec<(Uuid, egui::Rect)> = Vec::new();
         let mut reorder = None;
         let mut select_place = None;
         let mut add_place = false;
@@ -1058,67 +1089,41 @@ impl RtermApp {
                     ui.label("Tab order");
                     ui.label(
                         egui::RichText::new(
-                            "Drag tabs in the title bar, or move a place with the arrows.",
+                            "Drag a place up or down. The title bar follows this order.",
                         )
                         .small()
                         .weak(),
                     );
                     ui.add_space(8.0);
-                    if places.is_empty() {
-                        ui.label(egui::RichText::new("No places yet.").weak());
-                        if ui.button("Add Place…").clicked() {
-                            add_place = true;
-                        }
-                    } else {
-                        egui::ScrollArea::vertical()
-                            .max_height(280.0)
-                            .show(ui, |ui| {
-                                egui::Grid::new("settings-places")
-                                    .num_columns(4)
-                                    .spacing(egui::vec2(8.0, 4.0))
-                                    .show(ui, |ui| {
-                                        for (index, place) in places.iter().enumerate() {
-                                            ui.label(
-                                                egui::RichText::new(format!("{:02}", index + 1))
-                                                    .monospace()
-                                                    .weak(),
-                                            );
-                                            if ui
-                                                .selectable_label(
-                                                    selected_id == Some(place.id),
-                                                    place.display_label(),
-                                                )
-                                                .clicked()
-                                            {
-                                                select_place = Some(place.id);
-                                            }
-                                            let up = index > 0;
-                                            let down = index + 1 < places.len();
-                                            if icon_button(
-                                                ui,
-                                                up,
-                                                crate::icons::paint_arrow_up,
-                                                "Move up",
-                                            )
-                                            .clicked()
-                                            {
-                                                reorder = Some((place.id, places[index - 1].id));
-                                            }
-                                            if icon_button(
-                                                ui,
-                                                down,
-                                                crate::icons::paint_arrow_down,
-                                                "Move down",
-                                            )
-                                            .clicked()
-                                            {
-                                                reorder = Some((place.id, places[index + 1].id));
-                                            }
-                                            ui.end_row();
-                                        }
-                                    });
-                            });
-                    }
+                    egui::ScrollArea::vertical()
+                        .max_height(280.0)
+                        .drag_to_scroll(false)
+                        .show(ui, |ui| {
+                            if places.is_empty() {
+                                ui.label(egui::RichText::new("No places yet.").weak());
+                                ui.add_space(4.0);
+                            }
+                            for (index, place) in places.iter().enumerate() {
+                                let response = place_row(
+                                    ui,
+                                    index,
+                                    place,
+                                    selected_id == Some(place.id),
+                                    drag == Some(place.id),
+                                );
+                                row_rects.push((place.id, response.rect));
+                                if response.clicked() {
+                                    select_place = Some(place.id);
+                                }
+                                if response.drag_started() {
+                                    drag = Some(place.id);
+                                }
+                            }
+                            ui.add_space(4.0);
+                            if add_place_row(ui).clicked() {
+                                add_place = true;
+                            }
+                        });
                 }
             }
             ui.add_space(12.0);
@@ -1131,6 +1136,14 @@ impl RtermApp {
             });
         });
         self.settings_tab = tab;
+        if let Some(id) = drag
+            && pointer_released
+            && let Some(pos) = pointer_pos
+            && let Some((onto, _)) = row_rects.iter().find(|(_, rect)| rect.contains(pos))
+        {
+            reorder = Some((id, *onto));
+        }
+        self.settings_drag = if pointer_released { None } else { drag };
         if let Some((id, onto)) = reorder {
             self.store.move_place(id, onto);
         }
@@ -1157,6 +1170,7 @@ impl RtermApp {
         }
         if !open {
             self.settings_open = false;
+            self.settings_drag = None;
         }
     }
 }
@@ -1236,6 +1250,32 @@ fn pointer_sense(drag: bool) -> egui::Sense {
     }
 }
 
+const TAB_GAP: f32 = 4.0;
+const MIN_TAB_WIDTH: f64 = 72.0;
+
+fn tab_widths(places: &[Place], available: f64) -> Vec<f64> {
+    if places.is_empty() {
+        return Vec::new();
+    }
+    let natural: Vec<f64> = places
+        .iter()
+        .map(|place| tab_width(place).max(MIN_TAB_WIDTH))
+        .collect();
+    let total: f64 = natural.iter().sum();
+    if total <= available {
+        return natural;
+    }
+    let minimum = MIN_TAB_WIDTH * natural.len() as f64;
+    if minimum >= available {
+        return vec![MIN_TAB_WIDTH; natural.len()];
+    }
+    let slack = (available - minimum) / (total - minimum);
+    natural
+        .iter()
+        .map(|width| MIN_TAB_WIDTH + (width - MIN_TAB_WIDTH) * slack)
+        .collect()
+}
+
 fn tab_width(place: &Place) -> f64 {
     keys::estimated_tab_width(&place.display_label())
 }
@@ -1302,23 +1342,97 @@ fn dot(ui: &mut egui::Ui, color: egui::Color32) -> egui::Response {
     response
 }
 
-fn icon_button(
+const SETTINGS_ROW_HEIGHT: f32 = 26.0;
+
+fn place_row(
     ui: &mut egui::Ui,
-    enabled: bool,
-    paint: fn(&egui::Painter, egui::Rect, egui::Color32),
-    hover: &str,
+    index: usize,
+    place: &Place,
+    selected: bool,
+    dragging: bool,
 ) -> egui::Response {
-    let response = ui.add_enabled(
-        enabled,
-        egui::Button::new("").min_size(egui::vec2(24.0, 20.0)),
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), SETTINGS_ROW_HEIGHT),
+        pointer_sense(true),
     );
-    let color = if enabled {
-        ui.visuals().text_color()
+    let fill = if dragging {
+        egui::Color32::from_rgba_unmultiplied(80, 140, 220, 90)
+    } else if selected {
+        egui::Color32::from_rgba_unmultiplied(80, 140, 220, 55)
+    } else if response.hovered() {
+        ui.visuals().widgets.hovered.bg_fill
     } else {
-        ui.visuals().weak_text_color()
+        egui::Color32::TRANSPARENT
     };
-    paint(ui.painter(), response.rect.shrink(3.0), color);
-    response.on_hover_text(hover)
+    if fill != egui::Color32::TRANSPARENT {
+        ui.painter().rect_filled(rect, 6.0, fill);
+    }
+    let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    painter.text(
+        rect.left_center() + egui::vec2(8.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        format!("{:02}", index + 1),
+        egui::FontId::monospace(11.0),
+        ui.visuals().weak_text_color(),
+    );
+    let color = if selected {
+        ui.visuals().strong_text_color()
+    } else {
+        ui.visuals().text_color()
+    };
+    painter.text(
+        rect.left_center() + egui::vec2(38.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        place.display_label(),
+        egui::FontId::proportional(13.0),
+        color,
+    );
+    paint_grip(
+        &painter,
+        rect.right_center() - egui::vec2(14.0, 0.0),
+        ui.visuals().weak_text_color(),
+    );
+    response.on_hover_cursor(egui::CursorIcon::Grab)
+}
+
+fn add_place_row(ui: &mut egui::Ui) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), SETTINGS_ROW_HEIGHT),
+        pointer_sense(false),
+    );
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 6.0, ui.visuals().widgets.hovered.bg_fill);
+    }
+    let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    let color = ui.visuals().text_color();
+    painter.text(
+        rect.left_center() + egui::vec2(8.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        "+",
+        egui::FontId::proportional(16.0),
+        color,
+    );
+    painter.text(
+        rect.left_center() + egui::vec2(38.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        "Add place",
+        egui::FontId::proportional(13.0),
+        color,
+    );
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn paint_grip(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    for row in -1..=1 {
+        for column in 0..=1 {
+            painter.circle_filled(
+                center + egui::vec2(column as f32 * 3.0, row as f32 * 4.0),
+                1.0,
+                color,
+            );
+        }
+    }
 }
 
 fn paint_status(ui: &egui::Ui, center: egui::Pos2, state: &TabState) {
