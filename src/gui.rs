@@ -547,9 +547,6 @@ impl RtermApp {
 
     fn place_tabs(&mut self, ui: &mut egui::Ui, places: &[Place], cap: f32, salt: &str) {
         let width = cap.max(0.0);
-        let gaps = TAB_GAP * places.len().saturating_sub(1) as f32;
-        let available = f64::from((width - gaps).max(0.0));
-        let widths = tab_widths(places, available);
         let strip = egui::Rect::from_min_size(
             ui.available_rect_before_wrap().min,
             egui::vec2(width, ui.available_height()),
@@ -577,8 +574,8 @@ impl RtermApp {
                     .drag_to_scroll(false)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            for (place, width) in places.iter().zip(widths) {
-                                self.tab(ui, place, width as f32);
+                            for place in places {
+                                self.tab(ui, place, tab_width(place) as f32);
                             }
                         });
                     });
@@ -1251,30 +1248,6 @@ fn pointer_sense(drag: bool) -> egui::Sense {
 }
 
 const TAB_GAP: f32 = 4.0;
-const MIN_TAB_WIDTH: f64 = 72.0;
-
-fn tab_widths(places: &[Place], available: f64) -> Vec<f64> {
-    if places.is_empty() {
-        return Vec::new();
-    }
-    let natural: Vec<f64> = places
-        .iter()
-        .map(|place| tab_width(place).max(MIN_TAB_WIDTH))
-        .collect();
-    let total: f64 = natural.iter().sum();
-    if total <= available {
-        return natural;
-    }
-    let minimum = MIN_TAB_WIDTH * natural.len() as f64;
-    if minimum >= available {
-        return vec![MIN_TAB_WIDTH; natural.len()];
-    }
-    let slack = (available - minimum) / (total - minimum);
-    natural
-        .iter()
-        .map(|width| MIN_TAB_WIDTH + (width - MIN_TAB_WIDTH) * slack)
-        .collect()
-}
 
 fn tab_width(place: &Place) -> f64 {
     keys::estimated_tab_width(&place.display_label())
