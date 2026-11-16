@@ -470,7 +470,7 @@ impl RtermApp {
                     if self.fill {
                         self.traffic(ui);
                     }
-                    self.place_tabs(ui, &places, split.left_cap as f32, "tabs");
+                    self.place_tabs(ui, &places, split.left_cap as f32);
                     if split.notch_width > 0.5 {
                         ui.allocate_exact_size(
                             egui::vec2(split.notch_width as f32, row_h),
@@ -497,7 +497,7 @@ impl RtermApp {
                                 ui.add_space(TRAFFIC_WIDTH);
                             }
                             let width = ui.available_width().max(0.0);
-                            self.place_tabs(ui, &places, width, "tabs");
+                            self.place_tabs(ui, &places, width);
                         });
                     });
                 }
@@ -540,12 +540,17 @@ impl RtermApp {
         rect
     }
 
-    fn place_tabs(&mut self, ui: &mut egui::Ui, places: &[Place], cap: f32, salt: &str) {
+    fn place_tabs(&mut self, ui: &mut egui::Ui, places: &[Place], cap: f32) {
         let width = cap.max(0.0);
-        let strip = egui::Rect::from_min_size(
-            ui.available_rect_before_wrap().min,
-            egui::vec2(width, 22.0),
-        );
+        let height = 22.0;
+        let (strip, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        let widths: Vec<f32> = places
+            .iter()
+            .map(|place| tab_width(place) as f32)
+            .collect();
+        let gaps = TAB_GAP * places.len().saturating_sub(1) as f32;
+        let content = widths.iter().sum::<f32>() + gaps;
+        let max = (content - strip.width()).max(0.0);
         let mut wheel = egui::Vec2::ZERO;
         if ui.rect_contains_pointer(strip) {
             wheel = ui.input(|input| input.smooth_scroll_delta);
@@ -557,33 +562,18 @@ impl RtermApp {
         }
         // Trackpad horizontal scroll wins; a plain mouse wheel scrolls the tabs.
         let delta = if wheel.x != 0.0 { wheel.x } else { wheel.y };
-        let offset = (self.tab_scroll - delta).max(0.0);
-        self.tab_scroll = ui
-            .allocate_ui_with_layout(
-                egui::vec2(width, ui.available_height()),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = TAB_GAP;
-                    egui::ScrollArea::horizontal()
-                        .id_salt(salt)
-                        .scroll_bar_visibility(
-                            egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
-                        )
-                        .drag_to_scroll(false)
-                        .horizontal_scroll_offset(offset)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                for place in places {
-                                    self.tab(ui, place, tab_width(place) as f32);
-                                }
-                            });
-                        })
-                },
-            )
-            .inner
-            .state
-            .offset
-            .x;
+        self.tab_scroll = (self.tab_scroll - delta).clamp(0.0, max);
+        let painter = ui.painter().with_clip_rect(strip);
+        let mut x = strip.left() - self.tab_scroll;
+        for (place, width) in places.iter().zip(widths) {
+            let rect = egui::Rect::from_min_size(egui::pos2(x, strip.top()), egui::vec2(width, height));
+            x += width + TAB_GAP;
+            let visible = rect.intersect(strip);
+            if visible.width() <= 0.5 {
+                continue;
+            }
+            self.tab(ui, &painter, place, rect, visible);
+        }
     }
 
     fn terminal_mode(&self) -> (u16, bool) {
@@ -657,20 +647,32 @@ impl RtermApp {
         }
     }
 
-    fn tab(&mut self, ui: &mut egui::Ui, place: &Place, width: f32) {
+    fn tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        painter: &egui::Painter,
+        place: &Place,
+        rect: egui::Rect,
+        visible: egui::Rect,
+    ) {
         let selected = self.store.selected_id == Some(place.id);
         let state = self.store.tab_state(place.id);
+        let response = ui.interact(
+            visible,
+            ui.id().with(("tab", place.id)),
+            pointer_sense(true),
+        );
         let fill = if selected {
             egui::Color32::from_rgba_unmultiplied(80, 140, 220, 70)
+        } else if response.hovered() {
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18)
         } else {
             egui::Color32::TRANSPARENT
         };
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(width, 22.0), pointer_sense(true));
-        self.tab_rects.push((place.id, rect));
-        ui.painter().rect_filled(rect, 10.0, fill);
+        self.tab_rects.push((place.id, visible));
+        painter.rect_filled(rect, 10.0, fill);
         if selected {
-            ui.painter().rect_stroke(
+            painter.rect_stroke(
                 rect,
                 10.0,
                 egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 140, 220)),
@@ -678,14 +680,13 @@ impl RtermApp {
             );
         }
         let dot_center = rect.left_center() + egui::vec2(12.0, 0.0);
-        paint_status(ui, dot_center, &state);
+        paint_status(painter, dot_center, &state);
         let text = egui::Rect::from_min_max(
             rect.left_center() + egui::vec2(20.0, -10.0),
             rect.right_center() + egui::vec2(-4.0, 10.0),
-        );
-        let painter = ui
-            .painter()
-            .with_clip_rect(text.intersect(ui.clip_rect()));
+        )
+        .intersect(visible);
+        let painter = painter.with_clip_rect(text);
         painter.text(
             rect.left_center() + egui::vec2(20.0, 0.0),
             egui::Align2::LEFT_CENTER,
@@ -1441,7 +1442,7 @@ fn paint_grip(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32)
     }
 }
 
-fn paint_status(ui: &egui::Ui, center: egui::Pos2, state: &TabState) {
+fn paint_status(painter: &egui::Painter, center: egui::Pos2, state: &TabState) {
     let color = match state {
         TabState::Idle => egui::Color32::GRAY,
         TabState::Attaching => egui::Color32::GRAY,
@@ -1449,14 +1450,13 @@ fn paint_status(ui: &egui::Ui, center: egui::Pos2, state: &TabState) {
         TabState::Failed(_) => egui::Color32::from_rgb(220, 60, 60),
     };
     if matches!(state, TabState::Attaching) {
-        let t = ui.input(|input| input.time);
-        ui.painter()
-            .circle_stroke(center, 4.0, egui::Stroke::new(1.5, color));
+        let t = painter.ctx().input(|input| input.time);
+        painter.circle_stroke(center, 4.0, egui::Stroke::new(1.5_f32, color));
         let angle = t as f32 * 6.0;
         let tip = center + egui::vec2(angle.cos(), angle.sin()) * 4.0;
-        ui.painter().circle_filled(tip, 1.5, color);
+        painter.circle_filled(tip, 1.5, color);
     } else {
-        ui.painter().circle_filled(center, 3.5, color);
+        painter.circle_filled(center, 3.5, color);
     }
 }
 
