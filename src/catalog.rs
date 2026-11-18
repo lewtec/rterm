@@ -259,6 +259,8 @@ mod tests {
             backend: Backend::Herdr,
             session: None,
             label: None,
+            routes: Vec::new(),
+            fingerprint: None,
         };
         std::fs::write(
             &toml,

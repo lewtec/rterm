@@ -14,6 +14,7 @@ Use the approved term. Do not invent a synonym.
 | --- | --- | --- |
 | Saved attach target | place | session (alone), connection, bookmark, target, row, ref |
 | UI control for one place | tab | row (in v1) |
+| Machine a place attaches to | node | server, box |
 | Field that selects herdr, tmux, or screen | backend | multiplexer type, kind |
 | Code that turns a place into an argv | driver | adapter, plugin |
 | Durable list of places | catalog | config (alone), database |
@@ -44,6 +45,8 @@ A place is:
 - backend: `herdr`, `tmux`, or `screen`
 - session name: required for `tmux` and `screen`; absent for `herdr`
 - label: optional
+- fingerprint: optional SSH host key fingerprint (`SHA256:…`)
+- routes: zero or more `kind`, `host`, optional `port` records
 
 herdr has no session name in rterm.
 
@@ -59,6 +62,40 @@ If the user leaves the label empty, the default is:
 Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local.
 
 Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id.
+
+A place names one node. The node's SSH identity is the pinned host key fingerprint, not a hostname. `host` is the name the user knows; `routes` are the ways to reach it. One place may keep several routes and use any of them.
+
+## Routes
+
+A route is `kind`, `host`, and an optional `port`.
+
+| kind | source |
+| --- | --- |
+| `direct` | a saved name or IP, or the place host |
+| `mdns` | `<short>.local` through the system mDNS resolver |
+| `tailscale` | a MagicDNS name or IP from `tailscale status --json` |
+
+Try routes in this order, dropping duplicates: routes saved in the catalog, the place host, `mdns`, then Tailscale peers whose `HostName`, `DNSName` first label, `DNSName`, or IP matches the place host. Ask the Tailscale daemon through the `tailscale` binary. A missing binary or stopped daemon only removes Tailscale routes.
+
+The connection assistant probes each route before attaching:
+
+```text
+ssh -o BatchMode=yes -o ConnectTimeout=2 -o ConnectionAttempts=1 \
+    -o PreferredAuthentications=none -o StrictHostKeyChecking=accept-new \
+    -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=<temp> \
+    -o HostKeyAlias=rterm-<place-id> -o HostName=<route-host> [-p <port>] \
+    <user>@<place-host> true
+```
+
+Host key exchange happens before authentication, so a route that presents a host key is reachable even when the server refuses the `none` method. A password or OTP still belongs to the pane.
+
+When the place has no fingerprint, the first verified route teaches it. Persist that fingerprint before the attach starts. A route that presents another key is another node: never attach through it. If every route fails, fail the attach with the attempts.
+
+Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>`, so every route shares one known_hosts identity. Do not write the user's `known_hosts`.
+
+The Add sheet is a three-step wizard: **Details** (user, host, backend), **Routes** (probe every candidate and show each answer as it arrives), and **Review** (pin and route list before saving). **Find routes** is also available when editing, where it adds verified routes to the existing list.
+
+Discovery runs without attaching. It lists reachable routes with their fingerprint, keeps the routes that match the pin, and saves the pin.
 
 ## Window and tabs
 
@@ -99,7 +136,7 @@ When the place names a host and the backend is `tmux` or `screen`, use SSH. Call
 Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so the remote `PATH` is the user's login `PATH`:
 
 ```text
-ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=auto -o ControlPath=<caches>/cm-<place-id> -o ControlPersist=no user@host -- exec "$SHELL" -lc '<driver-command>'
+ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=auto -o ControlPath=<caches>/cm-<place-id> -o ControlPersist=no -o HostKeyAlias=rterm-<place-id> -o UserKnownHostsFile=<caches>/hostkeys-<place-id> -o StrictHostKeyChecking=yes -o HostName=<route-host> [-p <port>] user@<place-host> -- exec "$SHELL" -lc '<driver-command>'
 ```
 
 `$SHELL` is the user's shell (local or remote as SSH resolves it). Do not hard-code bash or zsh.
@@ -154,7 +191,7 @@ While write or upload runs, show a corner overlay on the pane. Show a spinner, W
 Remote upload uses a second `/usr/bin/ssh` on the attach ControlPath:
 
 ```text
-ssh -o BatchMode=yes -o ControlPath=<caches>/cm-<place-id> user@host -- cat > '/tmp/rterm-paste-<id>.png'
+ssh -o BatchMode=yes -o ControlPath=<caches>/cm-<place-id> -o HostKeyAlias=rterm-<place-id> -o UserKnownHostsFile=<caches>/hostkeys-<place-id> -o StrictHostKeyChecking=yes -o HostName=<route-host> [-p <port>] user@<place-host> -- cat > '/tmp/rterm-paste-<id>.png'
 ```
 
 Do not open a TTY. Do not install a remote helper. Do not write into the place working directory. Leave the file in `/tmp`.
@@ -167,13 +204,34 @@ Path: `~/Documents/rterm/*.rterm-place`
 
 Each place is one TOML file. Filename sort is tab order (`00-ada@whiterun-herdr.rterm-place`). There is no separate order field. Drag tabs to reorder. Save rewrites every prefix from `00`.
 
-A CRUD GUI in the app reads and writes these files. Add, edit, delete, and reorder places there.
+A CRUD GUI in the app reads and writes these files. Add, edit, delete, and reorder places there. **Find routes** in that sheet discovers and probes routes.
 
 If a file in that directory changes on disk, reload.
 
 On first launch, migrate `~/Library/Application Support/rterm/places.toml` into that directory and delete the old file.
 
-Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`.
+Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`, optional `fingerprint`, and zero or more `[[place.route]]` records. A route has `kind`, `host`, and optional `port`.
+
+```toml
+version = 2
+
+[[place]]
+id = "0192F3C1-7A4E-7C3A-9B2D-1F0A2B3C4D5E"
+user = "ada"
+host = "whiterun"
+backend = "herdr"
+fingerprint = "SHA256:C8olMcLxERkizT4dlzO1z85UVxdq/COQVR0T3I9IEK8"
+
+[[place.route]]
+kind = "mdns"
+host = "whiterun.local"
+
+[[place.route]]
+kind = "tailscale"
+host = "whiterun.tailnet.ts.net"
+```
+
+Version 1 files have no routes or fingerprint. They decode with no routes and no pin; `host` is still tried as the direct route. Write version 2 on the next save.
 
 Do not use `~/.config`. Do not use `UserDefaults` as the store.
 

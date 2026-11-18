@@ -10,6 +10,8 @@ use rterm::backend::Backend;
 use rterm::hud::{FAIL_CLEAR_NANOSECONDS, PasteHud};
 use rterm::paste::{self, Gesture, ImagePasteError};
 use rterm::place::Place;
+use rterm::probe::{self, Choice, ChooseError, Discovered};
+use rterm::route::{self, Route, RouteKind};
 use rterm::store::{AppStore, PlaceEditorState};
 use uuid::Uuid;
 
@@ -48,9 +50,46 @@ enum PasteMsg {
     },
 }
 
+struct PendingRoute {
+    generation: u32,
+    rx: Receiver<Result<Choice, ChooseError>>,
+}
+
+struct WizardRun {
+    key: Option<Uuid>,
+    rx: Receiver<WizardMsg>,
+    results: Vec<Discovered>,
+    done: bool,
+}
+
+enum WizardMsg {
+    Found(Discovered),
+    Done,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AddStep {
+    Details,
+    Routes,
+    Review,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AddAction {
+    Discover,
+    Review,
+    BackRoutes,
+    BackDetails,
+    Save,
+}
+
 pub struct RtermApp {
     store: AppStore,
     sessions: HashMap<Uuid, Session>,
+    pending_routes: HashMap<Uuid, PendingRoute>,
+    active_routes: HashMap<Uuid, Route>,
+    wizard: Option<WizardRun>,
+    add_step: AddStep,
     sleep: SleepWatch,
     fill: bool,
     windowed_size: Option<egui::Vec2>,
@@ -80,6 +119,10 @@ impl RtermApp {
         Self {
             store: AppStore::system(),
             sessions: HashMap::new(),
+            pending_routes: HashMap::new(),
+            active_routes: HashMap::new(),
+            wizard: None,
+            add_step: AddStep::Details,
             sleep: SleepWatch::start(),
             fill: false,
             windowed_size: None,
@@ -163,16 +206,77 @@ impl RtermApp {
                 want_id == id && *generation == session.generation()
             })
         });
+        self.pending_routes.retain(|id, pending| {
+            wanted
+                .iter()
+                .any(|(want_id, generation, _)| want_id == id && *generation == pending.generation)
+        });
+        self.active_routes
+            .retain(|id, _| wanted.iter().any(|(want_id, _, _)| want_id == id));
         for (id, generation, place) in wanted {
             if self.sessions.get(&id).map(Session::generation) == Some(generation) {
                 continue;
             }
-            match Session::start(&place, generation) {
-                Ok(session) => {
-                    self.sessions.insert(id, session);
-                }
-                Err(_) => self.store.handle_exit(id, Some(1), Some(generation)),
+            if place.is_local() {
+                self.start_session(&place, None, generation);
+                continue;
             }
+            let received = self
+                .pending_routes
+                .get(&id)
+                .map(|pending| pending.rx.try_recv());
+            match received {
+                None => {
+                    let probe_place = place.clone();
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(probe::choose(&probe_place));
+                    });
+                    self.pending_routes
+                        .insert(id, PendingRoute { generation, rx });
+                    self.store.note_progress(id, "Finding a route…");
+                }
+                Some(Err(mpsc::TryRecvError::Empty)) => {}
+                Some(Err(mpsc::TryRecvError::Disconnected)) => {
+                    self.pending_routes.remove(&id);
+                    self.store
+                        .fail_attach(id, "route discovery died".into(), Some(generation));
+                }
+                Some(Ok(Err(error))) => {
+                    self.pending_routes.remove(&id);
+                    self.store
+                        .fail_attach(id, error.to_string(), Some(generation));
+                }
+                Some(Ok(Ok(choice))) => {
+                    self.pending_routes.remove(&id);
+                    if let Some(learned) = choice.learned.as_ref() {
+                        self.store.learn_fingerprint(id, learned);
+                    }
+                    if let Err(err) = probe::install_known_hosts(&place, &choice) {
+                        self.store.fail_attach(
+                            id,
+                            format!("could not store host key: {err}"),
+                            Some(generation),
+                        );
+                        continue;
+                    }
+                    self.active_routes.insert(id, choice.route.clone());
+                    self.start_session(&place, Some(&choice.route), generation);
+                }
+            }
+        }
+    }
+
+    fn start_session(&mut self, place: &Place, route: Option<&Route>, generation: u32) {
+        match Session::start(place, route, generation) {
+            Ok(session) => {
+                self.sessions.insert(place.id, session);
+            }
+            Err(err) => self.store.fail_attach(
+                place.id,
+                format!("could not start attach: {err}"),
+                Some(generation),
+            ),
         }
     }
 
@@ -271,11 +375,13 @@ impl RtermApp {
         let (tx, rx) = mpsc::channel();
         self.paste.rx = Some(rx);
         let id = rterm::uuidv7::generate();
+        let route = self.active_routes.get(&place.id).cloned();
         std::thread::spawn(move || {
             let progress = tx.clone();
             let result = paste::deliver(
                 &png,
                 &place,
+                route.as_ref(),
                 id,
                 &mut |sent, total| {
                     let _ = progress.send(PasteMsg::Progress { token, sent, total });
@@ -441,7 +547,10 @@ impl eframe::App for RtermApp {
         self.settings_window(ctx);
         self.ensure_font(ctx);
         self.sync_sessions();
-        if self.paste.rx.is_some() {
+        if self.paste.rx.is_some()
+            || !self.pending_routes.is_empty()
+            || self.wizard.as_ref().is_some_and(|run| !run.done)
+        {
             ctx.request_repaint_after(Duration::from_millis(50));
         } else if !self.sessions.is_empty() || self.paste.hud.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
@@ -707,6 +816,7 @@ impl RtermApp {
             }
             if ui.button("Edit").clicked() {
                 self.settings_open = false;
+                self.wizard = None;
                 self.store.begin_edit(&place);
                 ui.close_menu();
             }
@@ -873,7 +983,84 @@ impl RtermApp {
 
     fn start_add(&mut self) {
         self.settings_open = false;
+        self.wizard = None;
+        self.add_step = AddStep::Details;
         self.store.begin_add();
+    }
+
+    fn start_wizard(&mut self) {
+        let Some(editor) = self.store.editor.clone() else {
+            return;
+        };
+        self.start_wizard_for(&editor);
+    }
+
+    fn start_wizard_for(&mut self, editor: &PlaceEditorState) {
+        let Some(place) = editor_draft(editor) else {
+            return;
+        };
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            probe::discover_with(&place, &probe::SshProber, &mut |found| {
+                let _ = tx.send(WizardMsg::Found(found));
+            });
+            let _ = tx.send(WizardMsg::Done);
+        });
+        self.wizard = Some(WizardRun {
+            key: editor.origin_id,
+            rx,
+            results: Vec::new(),
+            done: false,
+        });
+    }
+
+    fn poll_wizard(&mut self) {
+        let key = self
+            .store
+            .editor
+            .as_ref()
+            .and_then(|editor| editor.origin_id);
+        if self.wizard.as_ref().is_none_or(|run| run.key != key) {
+            self.wizard = None;
+            return;
+        }
+        let Some(run) = self.wizard.as_mut() else {
+            return;
+        };
+        let mut found = Vec::new();
+        let mut done = false;
+        while let Ok(message) = run.rx.try_recv() {
+            match message {
+                WizardMsg::Found(item) => found.push(item),
+                WizardMsg::Done => done = true,
+            }
+        }
+        run.done |= done;
+        for item in found {
+            run.results.push(item.clone());
+            if let Discovered::Verified {
+                route, fingerprint, ..
+            } = &item
+                && let Some(editor) = self.store.editor.as_mut()
+            {
+                route::push_unique(&mut editor.routes, route.clone());
+                if editor.fingerprint.trim().is_empty() {
+                    editor.fingerprint = fingerprint.clone();
+                }
+            }
+        }
+        if run.results.len() > 12 {
+            run.results.drain(..run.results.len() - 12);
+        }
+        let done = run.done;
+        if done && let Some(editor) = self.store.editor.as_mut() {
+            editor.routes = editor
+                .routes
+                .iter()
+                .filter(|route| !route.host.trim().is_empty())
+                .cloned()
+                .collect();
+        }
     }
 
     fn settings_button(&mut self, ui: &mut egui::Ui) {
@@ -924,6 +1111,20 @@ impl RtermApp {
     }
 
     fn editor_window(&mut self, ctx: &egui::Context) {
+        self.poll_wizard();
+        let adding = self
+            .store
+            .editor
+            .as_ref()
+            .is_some_and(|editor| editor.origin_id.is_none());
+        if adding {
+            self.add_window(ctx);
+        } else {
+            self.edit_window(ctx);
+        }
+    }
+
+    fn edit_window(&mut self, ctx: &egui::Context) {
         let Some(mut editor) = self.store.editor.clone() else {
             return;
         };
@@ -936,40 +1137,68 @@ impl RtermApp {
         let mut dismiss = false;
         let directory = self.store.places_directory().display().to_string();
         let mut saved = false;
+        let mut discover = false;
+        let discovering = self.wizard.as_ref().is_some_and(|run| !run.done);
+        let found = self
+            .wizard
+            .as_ref()
+            .map(|run| run.results.clone())
+            .unwrap_or_default();
+        let remote = !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
         sheet(ctx, "place-editor", &mut open, |ui| {
-            ui.set_min_width(420.0);
+            ui.set_min_width(460.0);
             ui.label(egui::RichText::new(title).size(18.0));
             ui.label(egui::RichText::new("Where this tab connects.").weak());
             ui.add_space(8.0);
-            egui::Grid::new("place-fields")
-                .num_columns(2)
-                .spacing(egui::vec2(12.0, 8.0))
-                .show(ui, |ui| {
-                    let hint = user_hint(&editor);
-                    place_field(ui, "User", &mut editor.user, hint);
-                    place_field(ui, "Host", &mut editor.host, "empty is this machine");
-                    ui.label("Backend");
-                    ui.horizontal(|ui| {
-                        for backend in Backend::ALL {
-                            ui.selectable_value(
-                                &mut editor.backend,
-                                backend,
-                                backend_name(backend),
-                            );
-                        }
-                    });
-                    ui.end_row();
-                    if editor.backend != Backend::Herdr {
-                        place_field(ui, "Session", &mut editor.session, "session name");
-                    }
-                    place_field(ui, "Label", &mut editor.label, "optional, shown on the tab");
-                });
+            identity_fields(ui, &mut editor, true);
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(backend_hint(editor.backend))
                     .small()
                     .weak(),
             );
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Routes").strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let label = if discovering { "Finding…" } else { "Find routes" };
+                    if ui
+                        .add_enabled(
+                            remote && editor_draft(&editor).is_some() && !discovering,
+                            egui::Button::new(label),
+                        )
+                        .on_hover_text(
+                            "Probe DNS, mDNS and Tailscale. Each route must answer with this node's host key.",
+                        )
+                        .clicked()
+                    {
+                        discover = true;
+                    }
+                    if discovering {
+                        ui.spinner();
+                    }
+                });
+            });
+            ui.label(
+                egui::RichText::new(
+                    "Tried in order before attaching. Empty means discover direct, mDNS and Tailscale.",
+                )
+                .small()
+                .weak(),
+            );
+            if remote {
+                routes_list(ui, &mut editor.routes);
+                discovery_list(ui, &found);
+            } else {
+                ui.label(
+                    egui::RichText::new("This machine has no remote routes.")
+                        .small()
+                        .weak(),
+                );
+            }
+            ui.add_space(6.0);
             ui.add(
                 egui::Label::new(egui::RichText::new(directory).small().weak()).selectable(true),
             );
@@ -993,6 +1222,7 @@ impl RtermApp {
             open = false;
         }
         if saved {
+            self.wizard = None;
             self.store.editor = Some(editor);
             self.store.save_editor();
             return;
@@ -1001,8 +1231,246 @@ impl RtermApp {
             if open {
                 self.store.editor = Some(editor);
             } else {
+                self.wizard = None;
                 self.store.editor = None;
+                return;
             }
+        }
+        if discover {
+            self.start_wizard();
+        }
+    }
+
+    fn add_window(&mut self, ctx: &egui::Context) {
+        let Some(mut editor) = self.store.editor.clone() else {
+            return;
+        };
+        let step = self.add_step;
+        let mut open = true;
+        let mut dismiss = false;
+        let mut next: Option<AddAction> = None;
+        let directory = self.store.places_directory().display().to_string();
+        let discovering = self.wizard.as_ref().is_some_and(|run| !run.done);
+        let found = self
+            .wizard
+            .as_ref()
+            .map(|run| run.results.clone())
+            .unwrap_or_default();
+        let remote = !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
+        sheet(ctx, "place-editor", &mut open, |ui| {
+            ui.set_min_width(460.0);
+            ui.label(egui::RichText::new("Add Place").size(18.0));
+            ui.label(egui::RichText::new("Where this tab connects.").weak());
+            ui.add_space(6.0);
+            wizard_steps(ui, step);
+            ui.add_space(8.0);
+            match step {
+                AddStep::Details => {
+                    identity_fields(ui, &mut editor, false);
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(backend_hint(editor.backend))
+                            .small()
+                            .weak(),
+                    );
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(if remote {
+                            "Next, rterm probes the node and pins its SSH host key."
+                        } else {
+                            "This machine needs no route or host key."
+                        })
+                        .small()
+                        .weak(),
+                    );
+                    ui.add_space(6.0);
+                    if let Some(issue) = save_issue(&editor) {
+                        ui.label(
+                            egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
+                        );
+                        ui.add_space(6.0);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let label = if remote { "Continue" } else { "Save" };
+                        if ui
+                            .add_enabled(can_save(&editor), egui::Button::new(label).fill(ACCENT))
+                            .clicked()
+                        {
+                            next = Some(if remote {
+                                AddAction::Discover
+                            } else {
+                                AddAction::Save
+                            });
+                        }
+                        if ui.button("Cancel").clicked() {
+                            dismiss = true;
+                        }
+                    });
+                }
+                AddStep::Routes => {
+                    ui.horizontal(|ui| {
+                        if discovering {
+                            ui.spinner();
+                        }
+                        ui.label(
+                            egui::RichText::new(if discovering {
+                                "Probing routes…"
+                            } else {
+                                "Routes checked."
+                            })
+                            .strong(),
+                        );
+                    });
+                    ui.label(
+                        egui::RichText::new(
+                            "DNS, mDNS and Tailscale. A route must answer with the node's host key to be kept.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    ui.add_space(8.0);
+                    if found.is_empty() {
+                        ui.label(
+                            egui::RichText::new(if discovering {
+                                "Waiting for the first answer…"
+                            } else {
+                                "No route answered. Go back and check the host, or skip and add a route by hand."
+                            })
+                            .weak(),
+                        );
+                    } else {
+                        discovery_list(ui, &found);
+                    }
+                    ui.add_space(8.0);
+                    if !editor.fingerprint.trim().is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Host key").small().weak());
+                            ui.monospace(short_fingerprint(&editor.fingerprint));
+                        });
+                    }
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let label = if discovering { "Skip" } else { "Review" };
+                        if ui.add(egui::Button::new(label).fill(ACCENT)).clicked() {
+                            next = Some(AddAction::Review);
+                        }
+                        if ui.button("Back").clicked() {
+                            next = Some(AddAction::BackDetails);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            dismiss = true;
+                        }
+                    });
+                }
+                AddStep::Review => {
+                    if remote {
+                        ui.horizontal(|ui| {
+                            ui.label("Fingerprint");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut editor.fingerprint)
+                                    .hint_text("SHA256:… learned on first connect")
+                                    .desired_width(320.0)
+                                    .font(egui::TextStyle::Monospace)
+                                    .id(egui::Id::new("place-fingerprint")),
+                            );
+                        });
+                        ui.label(
+                            egui::RichText::new(
+                                "Pinned to this node. A route that answers with another key is refused.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("Routes").strong());
+                        routes_list(ui, &mut editor.routes);
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "Tried in order before attaching. Empty means discover direct, mDNS and Tailscale.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                    } else {
+                        ui.label(
+                            egui::RichText::new("This machine has no route or host key.").weak(),
+                        );
+                    }
+                    ui.add_space(8.0);
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(directory).small().weak())
+                            .selectable(true),
+                    );
+                    ui.add_space(8.0);
+                    if let Some(issue) = save_issue(&editor) {
+                        ui.label(
+                            egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
+                        );
+                        ui.add_space(6.0);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add_enabled(can_save(&editor), egui::Button::new("Save").fill(ACCENT))
+                            .clicked()
+                        {
+                            next = Some(AddAction::Save);
+                        }
+                        if ui.button("Back").clicked() {
+                            next = Some(if remote {
+                                AddAction::BackRoutes
+                            } else {
+                                AddAction::BackDetails
+                            });
+                        }
+                        if ui.button("Cancel").clicked() {
+                            dismiss = true;
+                        }
+                    });
+                }
+            }
+        });
+        if dismiss {
+            open = false;
+        }
+        match next {
+            Some(AddAction::Discover) => {
+                editor.routes.clear();
+                editor.fingerprint.clear();
+                self.add_step = AddStep::Routes;
+                self.wizard = None;
+                self.store.editor = Some(editor);
+                self.start_wizard();
+            }
+            Some(AddAction::Review) => {
+                self.add_step = AddStep::Review;
+                self.store.editor = Some(editor);
+            }
+            Some(AddAction::BackRoutes) => {
+                self.add_step = AddStep::Routes;
+                self.store.editor = Some(editor);
+            }
+            Some(AddAction::BackDetails) => {
+                self.add_step = AddStep::Details;
+                self.wizard = None;
+                self.store.editor = Some(editor);
+            }
+            Some(AddAction::Save) => {
+                self.wizard = None;
+                self.store.editor = Some(editor);
+                self.store.save_editor();
+                return;
+            }
+            None => self.store.editor = Some(editor),
+        }
+        if !open {
+            self.wizard = None;
+            self.add_step = AddStep::Details;
+            self.store.editor = None;
         }
     }
 
@@ -1227,6 +1695,168 @@ fn backend_hint(backend: Backend) -> &'static str {
         Backend::Herdr => "Herdr attaches directly. It does not use a session name.",
         Backend::Tmux => "Attaches to a tmux session on that machine.",
         Backend::Screen => "Attaches to a screen session on that machine.",
+    }
+}
+
+fn wizard_steps(ui: &mut egui::Ui, step: AddStep) {
+    let steps = [
+        ("1 Details", AddStep::Details),
+        ("2 Routes", AddStep::Routes),
+        ("3 Review", AddStep::Review),
+    ];
+    ui.horizontal(|ui| {
+        for (index, (label, value)) in steps.into_iter().enumerate() {
+            if index > 0 {
+                ui.label(egui::RichText::new("›").weak());
+            }
+            let color = if value == step {
+                ACCENT
+            } else {
+                egui::Color32::GRAY
+            };
+            ui.label(egui::RichText::new(label).color(color).strong());
+        }
+    });
+}
+
+fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState, fingerprint: bool) {
+    egui::Grid::new("place-fields")
+        .num_columns(2)
+        .spacing(egui::vec2(12.0, 8.0))
+        .show(ui, |ui| {
+            let hint = user_hint(editor);
+            place_field(ui, "User", &mut editor.user, hint);
+            place_field(ui, "Host", &mut editor.host, "empty is this machine");
+            ui.label("Backend");
+            ui.horizontal(|ui| {
+                for backend in Backend::ALL {
+                    ui.selectable_value(&mut editor.backend, backend, backend_name(backend));
+                }
+            });
+            ui.end_row();
+            if editor.backend != Backend::Herdr {
+                place_field(ui, "Session", &mut editor.session, "session name");
+            }
+            place_field(ui, "Label", &mut editor.label, "optional, shown on the tab");
+            if fingerprint {
+                ui.label("Fingerprint");
+                ui.add(
+                    egui::TextEdit::singleline(&mut editor.fingerprint)
+                        .hint_text("SHA256:… learned on first connect")
+                        .desired_width(320.0)
+                        .font(egui::TextStyle::Monospace)
+                        .id(egui::Id::new("place-fingerprint")),
+                )
+                .on_hover_text("SSH host key pinned to this node. Leave empty to learn.");
+                ui.end_row();
+            }
+        });
+}
+
+fn routes_list(ui: &mut egui::Ui, routes: &mut Vec<Route>) {
+    let mut remove = None;
+    for (index, route) in routes.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt(("route-kind", index))
+                .selected_text(route.kind.label())
+                .width(92.0)
+                .show_ui(ui, |ui| {
+                    for kind in RouteKind::ALL {
+                        ui.selectable_value(&mut route.kind, kind, kind.label());
+                    }
+                });
+            ui.add(
+                egui::TextEdit::singleline(&mut route.host)
+                    .hint_text("host, IP or MagicDNS name")
+                    .desired_width(240.0)
+                    .font(egui::TextStyle::Monospace)
+                    .id(egui::Id::new(("route-host", index))),
+            );
+            if ui.button("×").on_hover_text("Remove route").clicked() {
+                remove = Some(index);
+            }
+        });
+    }
+    if let Some(index) = remove {
+        routes.remove(index);
+    }
+    if ui.button("+ Add route").clicked() {
+        routes.push(Route::direct(""));
+    }
+}
+
+fn discovery_list(ui: &mut egui::Ui, found: &[Discovered]) {
+    for item in found {
+        let (mark, color, detail) = discovery_line(item);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(mark).color(color));
+            ui.monospace(item.route().display());
+            ui.label(egui::RichText::new(detail).small().weak());
+        });
+    }
+}
+
+fn editor_draft(editor: &PlaceEditorState) -> Option<Place> {
+    let host = editor.host.trim();
+    let user = editor.user.trim();
+    if host.is_empty() || Place::is_loopback_host(host) || user.is_empty() {
+        return None;
+    }
+    let backend = editor.backend;
+    // Discovery only needs the node, so a missing session must not block it.
+    let session = editor.session.trim();
+    let session = if session.is_empty() {
+        None
+    } else {
+        Some(session.to_string())
+    };
+    let fingerprint = editor.fingerprint.trim();
+    Some(Place {
+        id: Uuid::new_v4(),
+        user: user.to_string(),
+        host: host.to_string(),
+        backend,
+        session,
+        label: None,
+        routes: editor.routes.clone(),
+        fingerprint: if fingerprint.is_empty() {
+            None
+        } else {
+            Some(fingerprint.to_string())
+        },
+    })
+}
+
+fn discovery_line(item: &Discovered) -> (&'static str, egui::Color32, String) {
+    match item {
+        Discovered::Verified {
+            fingerprint,
+            learned,
+            ..
+        } => (
+            "✓",
+            egui::Color32::from_rgb(110, 200, 120),
+            if *learned {
+                format!("learned {}", short_fingerprint(fingerprint))
+            } else {
+                format!("matches pin · {}", short_fingerprint(fingerprint))
+            },
+        ),
+        Discovered::HostKeyMismatch { found, .. } => (
+            "✗",
+            egui::Color32::from_rgb(255, 94, 87),
+            format!("different host key ({})", short_fingerprint(found)),
+        ),
+        Discovered::Unreachable { reason, .. } => ("…", egui::Color32::GRAY, reason.clone()),
+    }
+}
+
+fn short_fingerprint(fingerprint: &str) -> String {
+    let keep = fingerprint.chars().take(24).collect::<String>();
+    if fingerprint.chars().count() > 24 {
+        format!("{keep}…")
+    } else {
+        keep
     }
 }
 
@@ -2122,6 +2752,8 @@ mod tests {
             backend: Backend::Tmux,
             session: String::new(),
             label: String::new(),
+            routes: Vec::new(),
+            fingerprint: String::new(),
         };
         assert_eq!(save_issue(&editor), Some("A remote host needs a user."));
         editor.user = "ada".into();

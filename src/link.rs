@@ -195,6 +195,8 @@ mod tests {
             backend: Backend::Herdr,
             session: None,
             label: None,
+            routes: Vec::new(),
+            fingerprint: None,
         };
         assert_eq!(
             place::file_name(0, &place),

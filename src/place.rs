@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::backend::Backend;
 use crate::paths::login_name;
+use crate::route::Route;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Place {
@@ -13,6 +14,11 @@ pub struct Place {
     pub backend: Backend,
     pub session: Option<String>,
     pub label: Option<String>,
+    /// Alternatives to reach this node. The host field is tried as well.
+    pub routes: Vec<Route>,
+    /// Pinned SSH host key fingerprint (`SHA256:...`). Empty means learn on
+    /// the first successful attach.
+    pub fingerprint: Option<String>,
 }
 
 impl Place {
@@ -29,6 +35,8 @@ impl Place {
             backend,
             session,
             label: None,
+            routes: Vec::new(),
+            fingerprint: None,
         }
     }
 
@@ -140,6 +148,8 @@ impl Place {
                 session
             },
             label: None,
+            routes: Vec::new(),
+            fingerprint: None,
         })
     }
 }
