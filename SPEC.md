@@ -93,7 +93,7 @@ When the place has no fingerprint, the first verified route teaches it. Persist 
 
 Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>`, so every route shares one known_hosts identity. Do not write the user's `known_hosts`.
 
-The Add sheet is a three-step wizard: **Details** (user, host, backend), **Routes** (probe every candidate and show each answer as it arrives), and **Review** (pin and route list before saving). **Find routes** is also available when editing, where it adds verified routes to the existing list.
+The Add sheet is a three-step wizard: **Details** (host, backend, session), **Routes** (set the user, then probe every candidate and show each answer as it arrives), and **Review** (pin and route list before saving). Details only advances; it never saves. **Find routes** is also available when editing, where it adds verified routes to the existing list.
 
 Discovery runs without attaching. It lists reachable routes with their fingerprint, keeps the routes that match the pin, and saves the pin.
 
