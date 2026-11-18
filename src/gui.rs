@@ -77,6 +77,7 @@ enum AddStep {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AddAction {
     Discover,
+    Probe,
     Review,
     BackRoutes,
     BackDetails,
@@ -1150,7 +1151,7 @@ impl RtermApp {
             ui.label(egui::RichText::new(title).size(18.0));
             ui.label(egui::RichText::new("Where this tab connects.").weak());
             ui.add_space(8.0);
-            identity_fields(ui, &mut editor, true);
+            identity_fields(ui, &mut editor, true, true);
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(backend_hint(editor.backend))
@@ -1256,7 +1257,6 @@ impl RtermApp {
             .as_ref()
             .map(|run| run.results.clone())
             .unwrap_or_default();
-        let remote = !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
         sheet(ctx, "place-editor", &mut open, |ui| {
             ui.set_min_width(460.0);
             ui.label(egui::RichText::new("Add Place").size(18.0));
@@ -1266,7 +1266,9 @@ impl RtermApp {
             ui.add_space(8.0);
             match step {
                 AddStep::Details => {
-                    identity_fields(ui, &mut editor, false);
+                    identity_fields(ui, &mut editor, false, false);
+                    let remote =
+                        !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
                     ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new(backend_hint(editor.backend))
@@ -1278,7 +1280,7 @@ impl RtermApp {
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new(if remote {
-                            "Next, rterm probes the node and pins its SSH host key."
+                            "Next: set the user, probe routes, and pin the host key."
                         } else {
                             "This machine needs no route or host key."
                         })
@@ -1286,22 +1288,24 @@ impl RtermApp {
                         .weak(),
                     );
                     ui.add_space(6.0);
-                    if let Some(issue) = save_issue(&editor) {
+                    if let Some(issue) = details_issue(&editor) {
                         ui.label(
                             egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
                         );
                         ui.add_space(6.0);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let label = if remote { "Continue" } else { "Save" };
                         if ui
-                            .add_enabled(can_save(&editor), egui::Button::new(label).fill(ACCENT))
+                            .add_enabled(
+                                details_issue(&editor).is_none(),
+                                egui::Button::new("Continue").fill(ACCENT),
+                            )
                             .clicked()
                         {
                             next = Some(if remote {
                                 AddAction::Discover
                             } else {
-                                AddAction::Save
+                                AddAction::Review
                             });
                         }
                         if ui.button("Cancel").clicked() {
@@ -1310,6 +1314,17 @@ impl RtermApp {
                     });
                 }
                 AddStep::Routes => {
+                    let ready = editor_draft(&editor).is_some();
+                    ui.label(egui::RichText::new("Who logs in, and how to reach the node.").weak());
+                    ui.add_space(6.0);
+                    egui::Grid::new("route-user")
+                        .num_columns(2)
+                        .spacing(egui::vec2(12.0, 8.0))
+                        .show(ui, |ui| {
+                            let hint = user_hint(&editor);
+                            place_field(ui, "User", &mut editor.user, hint);
+                        });
+                    ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if discovering {
                             ui.spinner();
@@ -1317,11 +1332,24 @@ impl RtermApp {
                         ui.label(
                             egui::RichText::new(if discovering {
                                 "Probing routes…"
+                            } else if found.is_empty() {
+                                "Not probed yet."
                             } else {
                                 "Routes checked."
                             })
                             .strong(),
                         );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add_enabled(
+                                    ready && !discovering,
+                                    egui::Button::new("Find routes"),
+                                )
+                                .clicked()
+                            {
+                                next = Some(AddAction::Probe);
+                            }
+                        });
                     });
                     ui.label(
                         egui::RichText::new(
@@ -1331,13 +1359,20 @@ impl RtermApp {
                         .weak(),
                     );
                     ui.add_space(8.0);
-                    if found.is_empty() {
+                    if !ready {
+                        ui.label(
+                            egui::RichText::new("Type a user to probe routes.")
+                                .small()
+                                .weak(),
+                        );
+                    } else if found.is_empty() {
                         ui.label(
                             egui::RichText::new(if discovering {
                                 "Waiting for the first answer…"
                             } else {
-                                "No route answered. Go back and check the host, or skip and add a route by hand."
+                                "No route answered. Run Find routes again, go back to change the host, or continue and add a route by hand."
                             })
+                            .small()
                             .weak(),
                         );
                     } else {
@@ -1353,9 +1388,18 @@ impl RtermApp {
                     ui.add_space(6.0);
                     ui.separator();
                     ui.add_space(6.0);
+                    if let Some(issue) = save_issue(&editor) {
+                        ui.label(
+                            egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
+                        );
+                        ui.add_space(6.0);
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let label = if discovering { "Skip" } else { "Review" };
-                        if ui.add(egui::Button::new(label).fill(ACCENT)).clicked() {
+                        if ui
+                            .add_enabled(can_save(&editor), egui::Button::new(label).fill(ACCENT))
+                            .clicked()
+                        {
                             next = Some(AddAction::Review);
                         }
                         if ui.button("Back").clicked() {
@@ -1367,7 +1411,14 @@ impl RtermApp {
                     });
                 }
                 AddStep::Review => {
+                    let remote =
+                        !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
                     if remote {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Login").small().weak());
+                            ui.monospace(format!("{}@{}", editor.user.trim(), editor.host.trim()));
+                        });
+                        ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             ui.label("Fingerprint");
                             ui.add(
@@ -1441,6 +1492,12 @@ impl RtermApp {
             Some(AddAction::Discover) => {
                 editor.routes.clear();
                 editor.fingerprint.clear();
+                self.add_step = AddStep::Routes;
+                self.wizard = None;
+                self.store.editor = Some(editor);
+                self.start_wizard();
+            }
+            Some(AddAction::Probe) => {
                 self.add_step = AddStep::Routes;
                 self.wizard = None;
                 self.store.editor = Some(editor);
@@ -1719,13 +1776,20 @@ fn wizard_steps(ui: &mut egui::Ui, step: AddStep) {
     });
 }
 
-fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState, fingerprint: bool) {
+fn identity_fields(
+    ui: &mut egui::Ui,
+    editor: &mut PlaceEditorState,
+    user: bool,
+    fingerprint: bool,
+) {
     egui::Grid::new("place-fields")
         .num_columns(2)
         .spacing(egui::vec2(12.0, 8.0))
         .show(ui, |ui| {
-            let hint = user_hint(editor);
-            place_field(ui, "User", &mut editor.user, hint);
+            if user {
+                let hint = user_hint(editor);
+                place_field(ui, "User", &mut editor.user, hint);
+            }
             place_field(ui, "Host", &mut editor.host, "empty is this machine");
             ui.label("Backend");
             ui.horizontal(|ui| {
@@ -1860,18 +1924,22 @@ fn short_fingerprint(fingerprint: &str) -> String {
     }
 }
 
-fn save_issue(editor: &PlaceEditorState) -> Option<&'static str> {
-    let user = editor.user.trim();
-    let host = editor.host.trim();
-    if !Place::is_loopback_host(host) && user.is_empty() {
-        return Some("A remote host needs a user.");
-    }
+fn details_issue(editor: &PlaceEditorState) -> Option<&'static str> {
     match editor.backend {
         Backend::Herdr => None,
         Backend::Tmux if editor.session.trim().is_empty() => Some("tmux needs a session name."),
         Backend::Screen if editor.session.trim().is_empty() => Some("screen needs a session name."),
         Backend::Tmux | Backend::Screen => None,
     }
+}
+
+fn save_issue(editor: &PlaceEditorState) -> Option<&'static str> {
+    let user = editor.user.trim();
+    let host = editor.host.trim();
+    if !Place::is_loopback_host(host) && user.is_empty() {
+        return Some("A remote host needs a user.");
+    }
+    details_issue(editor)
 }
 
 fn can_save(editor: &PlaceEditorState) -> bool {
