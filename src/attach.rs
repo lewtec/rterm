@@ -162,6 +162,17 @@ impl PlaceAttach {
         }
     }
 
+    pub fn fail(&mut self, message: String, generation: Option<u32>) {
+        if let Some(generation) = generation
+            && generation != self.generation
+        {
+            return;
+        }
+        if matches!(self.phase, Phase::Attaching(_) | Phase::Live) {
+            self.phase = Phase::Failed(message);
+        }
+    }
+
     fn begin_connect(&mut self, bump_generation: bool) {
         if bump_generation {
             self.refresh();
@@ -400,6 +411,23 @@ mod tests {
         assert_eq!(attach.generation(), 2);
         assert_eq!(attach.connect_attempt(), 2);
         assert_eq!(attach.phase(), &Phase::Attaching(CONNECTING_TITLE.into()));
+    }
+
+    #[test]
+    fn fail_replaces_attaching_with_the_message() {
+        let mut attach = PlaceAttach::default();
+        attach.select();
+        attach.fail("no route to riverwood".into(), Some(0));
+        assert_eq!(
+            attach.phase(),
+            &Phase::Failed("no route to riverwood".into())
+        );
+        assert!(!attach.shows_pane());
+        attach.fail("stale".into(), Some(1));
+        assert_eq!(
+            attach.phase(),
+            &Phase::Failed("no route to riverwood".into())
+        );
     }
 
     #[test]

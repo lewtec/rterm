@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::paths::{self, caches_directory, home_dir};
 use crate::place::Place;
+use crate::route::Route;
 use crate::uuidv7::uuid_upper;
 
 pub const SSH_EXECUTABLE: &str = "/usr/bin/ssh";
@@ -61,7 +62,7 @@ pub fn verbose_log_path(place_id: Uuid, generation: u32) -> PathBuf {
     paths::verbose_log_path(&uuid_upper(place_id), generation)
 }
 
-pub fn launch(place: &Place, verbose_log: Option<&str>) -> Launch {
+pub fn launch(place: &Place, route: Option<&Route>, verbose_log: Option<&str>) -> Launch {
     if place.is_local() {
         return Launch {
             executable: local_shell(),
@@ -72,9 +73,41 @@ pub fn launch(place: &Place, verbose_log: Option<&str>) -> Launch {
     prepare_control_socket_directory();
     Launch {
         executable: SSH_EXECUTABLE.into(),
-        arguments: ssh_arguments(place, verbose_log),
+        arguments: ssh_arguments(place, route, verbose_log),
         current_directory: None,
     }
+}
+
+/// The node alias keeps every route of one place pinned to one known_hosts
+/// entry, independent of the route used for this attach.
+pub fn host_key_alias(place: &Place) -> String {
+    format!("rterm-{}", uuid_upper(place.id))
+}
+
+pub fn known_hosts_path(place: &Place) -> PathBuf {
+    caches_directory().join(format!("hostkeys-{}", uuid_upper(place.id)))
+}
+
+pub fn route_options(route: &Route) -> Vec<String> {
+    let mut options = vec!["-o".into(), format!("HostName={}", route.host)];
+    if let Some(port) = route.port
+        && port != 22
+    {
+        options.push("-p".into());
+        options.push(port.to_string());
+    }
+    options
+}
+
+pub fn identity_options(place: &Place) -> Vec<String> {
+    vec![
+        "-o".into(),
+        format!("HostKeyAlias={}", host_key_alias(place)),
+        "-o".into(),
+        format!("UserKnownHostsFile={}", known_hosts_path(place).display()),
+        "-o".into(),
+        "StrictHostKeyChecking=yes".into(),
+    ]
 }
 
 pub fn control_path(place: &Place) -> String {
@@ -95,15 +128,20 @@ pub fn control_master_options(place: &Place) -> Vec<String> {
     ]
 }
 
-pub fn upload_arguments(place: &Place, remote_path: &str) -> Vec<String> {
-    vec![
+pub fn upload_arguments(place: &Place, route: Option<&Route>, remote_path: &str) -> Vec<String> {
+    let mut arguments = vec![
         "-o".into(),
         "BatchMode=yes".into(),
         "-o".into(),
         format!("ControlPath={}", control_path(place)),
-        ssh_target(place),
-        format!("cat > {}", shell_single_quote(remote_path)),
-    ]
+    ];
+    if let Some(route) = route {
+        arguments.extend(identity_options(place));
+        arguments.extend(route_options(route));
+    }
+    arguments.push(ssh_target(place));
+    arguments.push(format!("cat > {}", shell_single_quote(remote_path)));
+    arguments
 }
 
 pub fn prepare_control_socket_directory() {
@@ -132,7 +170,11 @@ pub fn remote_command(place: &Place) -> String {
     }
 }
 
-pub fn ssh_arguments(place: &Place, verbose_log: Option<&str>) -> Vec<String> {
+pub fn ssh_arguments(
+    place: &Place,
+    route: Option<&Route>,
+    verbose_log: Option<&str>,
+) -> Vec<String> {
     let wrapped = format!(
         "exec \"$SHELL\" -lc {}",
         shell_single_quote(&remote_command(place))
@@ -148,6 +190,10 @@ pub fn ssh_arguments(place: &Place, verbose_log: Option<&str>) -> Vec<String> {
         format!("ServerAliveCountMax={SERVER_ALIVE_COUNT_MAX}"),
     ]);
     arguments.extend(control_master_options(place));
+    if let Some(route) = route {
+        arguments.extend(identity_options(place));
+        arguments.extend(route_options(route));
+    }
     arguments.push(ssh_target(place));
     arguments.push(wrapped);
     arguments
@@ -166,7 +212,7 @@ mod tests {
     #[test]
     fn remote_tmux_uses_ssh_keepalives() {
         let place = Place::new("ada", "remote.example", Backend::Tmux, Some("foo".into()));
-        assert_eq!(launch(&place, None).executable, SSH_EXECUTABLE);
+        assert_eq!(launch(&place, None, None).executable, SSH_EXECUTABLE);
         let mut expect = vec![
             "-t".into(),
             "-o".into(),
@@ -177,7 +223,7 @@ mod tests {
         expect.extend(control_master_options(&place));
         expect.push("ada@remote.example".into());
         expect.push("exec \"$SHELL\" -lc 'tmux new-session -A -s '\\''foo'\\'''".into());
-        assert_eq!(ssh_arguments(&place, None), expect);
+        assert_eq!(ssh_arguments(&place, None, None), expect);
     }
 
     #[test]
@@ -190,7 +236,7 @@ mod tests {
         );
         assert_eq!(remote_command(&place), "tmux new-session -A -s 'foo bar'");
         assert_eq!(
-            ssh_arguments(&place, None).last().map(String::as_str),
+            ssh_arguments(&place, None, None).last().map(String::as_str),
             Some("exec \"$SHELL\" -lc 'tmux new-session -A -s '\\''foo bar'\\'''")
         );
     }
@@ -204,7 +250,7 @@ mod tests {
     #[test]
     fn empty_host_is_local_login_shell() {
         let place = Place::new("", "", Backend::Herdr, None);
-        let launched = launch(&place, None);
+        let launched = launch(&place, None, None);
         assert_eq!(launched.executable, local_shell());
         assert_eq!(
             launched.arguments,
@@ -220,7 +266,7 @@ mod tests {
     #[test]
     fn remote_herdr_uses_ssh_and_server_binary() {
         let place = Place::new("ada", "riverwood", Backend::Herdr, None);
-        let launched = launch(&place, None);
+        let launched = launch(&place, None, None);
         assert_eq!(launched.executable, SSH_EXECUTABLE);
         let command = remote_command(&place);
         assert!(command.contains("/proc/"));
@@ -273,7 +319,7 @@ mod tests {
         let place = Place::new("ada", "remote.example", Backend::Herdr, None);
         let path = "/tmp/rterm-ssh.log";
         assert_eq!(
-            ssh_arguments(&place, Some(path))
+            ssh_arguments(&place, None, Some(path))
                 .iter()
                 .take(4)
                 .map(String::as_str)
@@ -281,7 +327,7 @@ mod tests {
             ["-t", "-v", "-E", path]
         );
         assert_eq!(
-            launch(&place, None)
+            launch(&place, None, None)
                 .arguments
                 .iter()
                 .take(2)
@@ -302,7 +348,7 @@ mod tests {
         };
         let place = Place::new("ada", name, Backend::Herdr, None);
         assert!(place.is_local());
-        assert_eq!(launch(&place, None).executable, local_shell());
+        assert_eq!(launch(&place, None, None).executable, local_shell());
         assert_eq!(place.display_label(), "ada@localhost:herdr");
     }
 
@@ -311,8 +357,8 @@ mod tests {
         let place = Place::new("ada", "localhost", Backend::Herdr, None);
         assert!(place.is_local());
         assert_eq!(place.display_label(), "ada@localhost:herdr");
-        assert_eq!(launch(&place, None).executable, local_shell());
-        assert_ne!(launch(&place, None).executable, SSH_EXECUTABLE);
+        assert_eq!(launch(&place, None, None).executable, local_shell());
+        assert_ne!(launch(&place, None, None).executable, SSH_EXECUTABLE);
     }
 
     #[test]
@@ -322,6 +368,33 @@ mod tests {
         assert!(Place::new("ada", "::1", Backend::Herdr, None).is_local());
         assert!(Place::new("ada", "[::1]", Backend::Herdr, None).is_local());
         assert!(!Place::new("ada", "riverwood", Backend::Herdr, None).is_local());
+    }
+
+    #[test]
+    fn route_pins_the_node_host_key() {
+        let place = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let route = Route {
+            kind: crate::route::RouteKind::Direct,
+            host: "100.64.0.7".into(),
+            port: Some(2222),
+        };
+        let arguments = ssh_arguments(&place, Some(&route), None);
+        assert!(arguments.contains(&format!(
+            "UserKnownHostsFile={}",
+            known_hosts_path(&place).display()
+        )));
+        assert!(arguments.contains(&format!("HostKeyAlias={}", host_key_alias(&place))));
+        assert!(arguments.contains(&"StrictHostKeyChecking=yes".to_string()));
+        assert!(arguments.contains(&"HostName=100.64.0.7".to_string()));
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair[0] == "-p" && pair[1] == "2222")
+        );
+        assert_eq!(
+            arguments.iter().rev().nth(1).map(String::as_str),
+            Some("ada@whiterun")
+        );
     }
 
     #[test]
@@ -338,7 +411,7 @@ mod tests {
         let place = Place::new("ada", "remote.example", Backend::Herdr, None);
         let remote = "/tmp/rterm-paste-x.png";
         assert_eq!(
-            upload_arguments(&place, remote),
+            upload_arguments(&place, None, remote),
             vec![
                 "-o".to_string(),
                 "BatchMode=yes".into(),
@@ -359,7 +432,7 @@ mod tests {
             format!("{}@localhost:tmux(dev)", login_name())
         );
         assert_eq!(
-            launch(&place, None).arguments,
+            launch(&place, None, None).arguments,
             vec!["-lc".to_string(), "tmux new-session -A -s 'dev'".into()]
         );
     }

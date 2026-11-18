@@ -2,9 +2,13 @@ use uuid::Uuid;
 
 use crate::backend::Backend;
 use crate::place::Place;
+use crate::route::{Route, RouteKind};
 use crate::uuidv7::uuid_upper;
 
-pub const CURRENT_VERSION: i64 = 1;
+pub const CURRENT_VERSION: i64 = 2;
+/// Files written before routes existed. They decode into a place with only the
+/// host route and no pin.
+pub const LEGACY_VERSION: i64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogDocument {
@@ -49,6 +53,7 @@ pub fn decode(text: &str) -> Result<CatalogDocument, CatalogError> {
     let mut version: Option<i64> = None;
     let mut places = Vec::new();
     let mut current: Option<PartialPlace> = None;
+    let mut current_route: Option<PartialRoute> = None;
     let mut current_start = 0usize;
 
     for (offset, raw_line) in split_lines(text).into_iter().enumerate() {
@@ -58,11 +63,20 @@ pub fn decode(text: &str) -> Result<CatalogDocument, CatalogError> {
             continue;
         }
         if line == "[[place]]" {
+            finish_route(&mut current, &mut current_route, line_number)?;
             if let Some(partial) = current.take() {
                 places.push(partial.finish(current_start)?);
             }
             current = Some(PartialPlace::default());
             current_start = line_number;
+            continue;
+        }
+        if line == "[[place.route]]" {
+            finish_route(&mut current, &mut current_route, line_number)?;
+            if current.is_none() {
+                return Err(CatalogError::UnexpectedLine(line_number, line.to_string()));
+            }
+            current_route = Some(PartialRoute::default());
             continue;
         }
         let Some(eq) = line.find('=') else {
@@ -81,6 +95,27 @@ pub fn decode(text: &str) -> Result<CatalogDocument, CatalogError> {
             return Err(CatalogError::UnexpectedLine(line_number, line.to_string()));
         }
         let value = decode_scalar(raw_value, line_number)?;
+        if let Some(route) = current_route.as_mut() {
+            match key {
+                "kind" => {
+                    let kind = RouteKind::parse(&value).ok_or_else(|| {
+                        CatalogError::InvalidValue("route kind".into(), line_number)
+                    })?;
+                    route.kind = Some(kind);
+                }
+                "host" => route.host = Some(value),
+                "port" => {
+                    let port = value.parse::<u16>().map_err(|_| {
+                        CatalogError::InvalidValue("route port".into(), line_number)
+                    })?;
+                    route.port = Some(port);
+                }
+                _ => {
+                    return Err(CatalogError::UnexpectedLine(line_number, line.to_string()));
+                }
+            }
+            continue;
+        }
         let partial = current.as_mut().expect("place table");
         match key {
             "id" => {
@@ -97,16 +132,18 @@ pub fn decode(text: &str) -> Result<CatalogDocument, CatalogError> {
             }
             "session" => partial.session = Some(value),
             "label" => partial.label = Some(value),
+            "fingerprint" => partial.fingerprint = Some(value),
             _ => {
                 return Err(CatalogError::UnexpectedLine(line_number, line.to_string()));
             }
         }
     }
+    finish_route(&mut current, &mut current_route, current_start)?;
     if let Some(partial) = current.take() {
         places.push(partial.finish(current_start)?);
     }
     let resolved = version.unwrap_or(0);
-    if resolved != CURRENT_VERSION {
+    if resolved != CURRENT_VERSION && resolved != LEGACY_VERSION {
         return Err(CatalogError::UnsupportedVersion(resolved));
     }
     Ok(CatalogDocument {
@@ -115,8 +152,23 @@ pub fn decode(text: &str) -> Result<CatalogDocument, CatalogError> {
     })
 }
 
+fn finish_route(
+    current: &mut Option<PartialPlace>,
+    route: &mut Option<PartialRoute>,
+    line: usize,
+) -> Result<(), CatalogError> {
+    let Some(route) = route.take() else {
+        return Ok(());
+    };
+    let Some(place) = current.as_mut() else {
+        return Err(CatalogError::UnexpectedLine(line, "[[place.route]]".into()));
+    };
+    place.routes.push(route.finish(line)?);
+    Ok(())
+}
+
 pub fn encode(document: &CatalogDocument) -> String {
-    let mut lines = vec![format!("version = {}", document.version), String::new()];
+    let mut lines = vec![format!("version = {CURRENT_VERSION}"), String::new()];
     for place in &document.places {
         lines.push("[[place]]".into());
         lines.push(format!("id = {}", quote(&uuid_upper(place.id))));
@@ -135,7 +187,23 @@ pub fn encode(document: &CatalogDocument) -> String {
         if let Some(label) = place.label.as_ref().filter(|label| !label.is_empty()) {
             lines.push(format!("label = {}", quote(label)));
         }
+        if let Some(fingerprint) = place
+            .fingerprint
+            .as_ref()
+            .filter(|fingerprint| !fingerprint.is_empty())
+        {
+            lines.push(format!("fingerprint = {}", quote(fingerprint)));
+        }
         lines.push(String::new());
+        for route in &place.routes {
+            lines.push("[[place.route]]".into());
+            lines.push(format!("kind = {}", quote(route.kind.as_str())));
+            lines.push(format!("host = {}", quote(&route.host)));
+            if let Some(port) = route.port {
+                lines.push(format!("port = {port}"));
+            }
+            lines.push(String::new());
+        }
     }
     lines.join("\n")
 }
@@ -222,6 +290,32 @@ struct PartialPlace {
     backend: Option<Backend>,
     session: Option<String>,
     label: Option<String>,
+    fingerprint: Option<String>,
+    routes: Vec<Route>,
+}
+
+#[derive(Default)]
+struct PartialRoute {
+    kind: Option<RouteKind>,
+    host: Option<String>,
+    port: Option<u16>,
+}
+
+impl PartialRoute {
+    fn finish(self, line: usize) -> Result<Route, CatalogError> {
+        let kind = self
+            .kind
+            .ok_or_else(|| CatalogError::MissingField("route kind".into(), line))?;
+        let host = self.host.unwrap_or_default().trim().to_string();
+        if host.is_empty() {
+            return Err(CatalogError::MissingField("route host".into(), line));
+        }
+        Ok(Route {
+            kind,
+            host,
+            port: self.port,
+        })
+    }
 }
 
 impl PartialPlace {
@@ -247,6 +341,11 @@ impl PartialPlace {
             .label
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let fingerprint = self
+            .fingerprint
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let local = host.is_empty();
         Ok(Place {
             id,
             user,
@@ -258,6 +357,8 @@ impl PartialPlace {
                 session
             },
             label,
+            routes: if local { Vec::new() } else { self.routes },
+            fingerprint: if local { None } else { fingerprint },
         })
     }
 }
@@ -331,6 +432,8 @@ mod tests {
                 backend: Backend::Herdr,
                 session: None,
                 label: None,
+                routes: Vec::new(),
+                fingerprint: None,
             },
             Place {
                 id: id("22222222-2222-2222-2222-222222222222"),
@@ -339,6 +442,8 @@ mod tests {
                 backend: Backend::Tmux,
                 session: Some("foo".into()),
                 label: Some("work".into()),
+                routes: Vec::new(),
+                fingerprint: None,
             },
         ];
         let encoded = encode(&CatalogDocument {
@@ -346,7 +451,7 @@ mod tests {
             places: places.clone(),
         });
         let decoded = decode(&encoded).unwrap();
-        assert_eq!(decoded.version, 1);
+        assert_eq!(decoded.version, 2);
         assert_eq!(decoded.places, places);
         let herdr_only = encode(&CatalogDocument {
             version: 1,
@@ -400,6 +505,8 @@ mod tests {
             backend: Backend::Screen,
             session: Some("s".into()),
             label: Some("line\nbreak".into()),
+            routes: Vec::new(),
+            fingerprint: None,
         };
         let decoded = decode(&encode(&CatalogDocument {
             version: 1,
@@ -418,6 +525,8 @@ mod tests {
             backend: Backend::Herdr,
             session: None,
             label: None,
+            routes: Vec::new(),
+            fingerprint: None,
         };
         let encoded = encode(&CatalogDocument {
             version: 1,
@@ -472,10 +581,105 @@ mod tests {
     }
 
     #[test]
+    fn routes_and_fingerprint_round_trip() {
+        let place = Place {
+            id: id("11111111-1111-1111-1111-111111111111"),
+            user: "ada".into(),
+            host: "whiterun".into(),
+            backend: Backend::Herdr,
+            session: None,
+            label: None,
+            routes: vec![
+                Route {
+                    kind: RouteKind::Mdns,
+                    host: "whiterun.local".into(),
+                    port: None,
+                },
+                Route {
+                    kind: RouteKind::Tailscale,
+                    host: "whiterun.tailnet.ts.net".into(),
+                    port: Some(2222),
+                },
+            ],
+            fingerprint: Some("SHA256:C8olMcLxERkizT4dlzO1z85UVxdq".into()),
+        };
+        let encoded = encode_place_file(&place);
+        assert!(encoded.contains("[[place.route]]"));
+        assert!(encoded.contains("kind = \"mdns\""));
+        assert!(encoded.contains("port = 2222"));
+        assert_eq!(decode_place_file(&encoded).unwrap(), place);
+    }
+
+    #[test]
+    fn version_one_place_has_no_routes_or_pin() {
+        let text = swift(
+            r#"
+        version = 1
+
+        [[place]]
+        id = "11111111-1111-1111-1111-111111111111"
+        user = "ada"
+        host = "whiterun"
+        backend = "herdr"
+        "#,
+        );
+        let decoded = decode(&text).unwrap();
+        assert_eq!(decoded.version, 1);
+        assert!(decoded.places[0].routes.is_empty());
+        assert!(decoded.places[0].fingerprint.is_none());
+        assert!(encode(&decoded).contains("version = 2"));
+    }
+
+    #[test]
+    fn route_requires_host() {
+        let text = swift(
+            r#"
+        version = 2
+
+        [[place]]
+        id = "11111111-1111-1111-1111-111111111111"
+        user = "ada"
+        host = "whiterun"
+        backend = "herdr"
+
+        [[place.route]]
+        kind = "mdns"
+        "#,
+        );
+        assert_eq!(
+            decode(&text).unwrap_err(),
+            CatalogError::MissingField("route host".into(), 3)
+        );
+    }
+
+    #[test]
+    fn unknown_route_kind_is_rejected() {
+        let text = swift(
+            r#"
+        version = 2
+
+        [[place]]
+        id = "11111111-1111-1111-1111-111111111111"
+        user = "ada"
+        host = "whiterun"
+        backend = "herdr"
+
+        [[place.route]]
+        kind = "carrier-pigeon"
+        host = "whiterun.local"
+        "#,
+        );
+        assert_eq!(
+            decode(&text).unwrap_err(),
+            CatalogError::InvalidValue("route kind".into(), 10)
+        );
+    }
+
+    #[test]
     fn rejects_unknown_version() {
         assert_eq!(
-            decode("version = 2\n").unwrap_err(),
-            CatalogError::UnsupportedVersion(2)
+            decode("version = 3\n").unwrap_err(),
+            CatalogError::UnsupportedVersion(3)
         );
     }
 }

@@ -9,6 +9,7 @@ use crate::codec::{self, CatalogDocument};
 use crate::paths::{self, login_name};
 use crate::place::Place;
 use crate::progress::ConnectProgress;
+use crate::route::Route;
 use crate::trace::Event;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +20,8 @@ pub struct PlaceEditorState {
     pub backend: Backend,
     pub session: String,
     pub label: String,
+    pub routes: Vec<Route>,
+    pub fingerprint: String,
 }
 
 pub struct AppStore {
@@ -160,6 +163,8 @@ impl AppStore {
             backend: Backend::Herdr,
             session: String::new(),
             label: String::new(),
+            routes: Vec::new(),
+            fingerprint: String::new(),
         });
     }
 
@@ -171,6 +176,8 @@ impl AppStore {
             backend: place.backend,
             session: place.session.clone().unwrap_or_default(),
             label: place.label.clone().unwrap_or_default(),
+            routes: place.routes.clone(),
+            fingerprint: place.fingerprint.clone().unwrap_or_default(),
         });
     }
 
@@ -199,6 +206,22 @@ impl AppStore {
             Some(draft.session.trim().to_string())
         };
         let label = draft.label.trim().to_string();
+        let local = Place::is_loopback_host(&draft.host);
+        let mut routes = Vec::new();
+        if !local {
+            for route in draft.routes {
+                let route = route.normalized();
+                if !route.host.is_empty() {
+                    crate::route::push_unique(&mut routes, route);
+                }
+            }
+        }
+        let fingerprint = if local {
+            None
+        } else {
+            let value = draft.fingerprint.trim().to_string();
+            if value.is_empty() { None } else { Some(value) }
+        };
         let place = Place {
             id: draft.origin_id.unwrap_or_else(Uuid::new_v4),
             user: draft.user,
@@ -206,6 +229,8 @@ impl AppStore {
             backend: draft.backend,
             session,
             label: if label.is_empty() { None } else { Some(label) },
+            routes,
+            fingerprint,
         };
         let should_reattach =
             if let Some(index) = self.places.iter().position(|item| item.id == place.id) {
@@ -320,6 +345,30 @@ impl AppStore {
     pub fn note_tty(&mut self, id: Uuid) {
         self.mutate_attach(id, PlaceAttach::note_tty);
         if let Some(progress) = self.progress.get_mut(&id) {
+            progress.finish();
+        }
+    }
+
+    pub fn learn_fingerprint(&mut self, id: Uuid, fingerprint: &str) {
+        let fingerprint = fingerprint.trim();
+        if fingerprint.is_empty() {
+            return;
+        }
+        let Some(place) = self.places.iter_mut().find(|place| place.id == id) else {
+            return;
+        };
+        if place.fingerprint.is_some() {
+            return;
+        }
+        place.fingerprint = Some(fingerprint.to_string());
+        self.persist();
+    }
+
+    pub fn fail_attach(&mut self, id: Uuid, message: String, generation: Option<u32>) {
+        self.mutate_attach(id, |attach| attach.fail(message, generation));
+        if !self.attaches.get(&id).is_some_and(PlaceAttach::shows_pane)
+            && let Some(progress) = self.progress.get_mut(&id)
+        {
             progress.finish();
         }
     }
@@ -600,6 +649,53 @@ mod tests {
         assert_eq!(store.selected_id, Some(first));
         assert_eq!(store.attaches.get(&first).unwrap().phase(), &Phase::Idle);
         assert!(!store.attaches.get(&first).unwrap().shows_pane());
+    }
+
+    #[test]
+    fn save_editor_keeps_routes_and_pin() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        store.begin_add();
+        {
+            let editor = store.editor.as_mut().unwrap();
+            editor.user = "ada".into();
+            editor.host = "riverwood".into();
+            editor.routes = vec![Route::mdns("riverwood.local")];
+            editor.fingerprint = "SHA256:C8olMcLxERkizT4dlzO1z85UVxdq".into();
+        }
+        store.save_editor();
+        let saved = store.places.last().unwrap().clone();
+        assert_eq!(saved.routes, vec![Route::mdns("riverwood.local")]);
+        assert_eq!(
+            saved.fingerprint.as_deref(),
+            Some("SHA256:C8olMcLxERkizT4dlzO1z85UVxdq")
+        );
+        let reloaded = store_in(&tmp);
+        let place = reloaded
+            .places
+            .iter()
+            .find(|place| place.id == saved.id)
+            .unwrap();
+        assert_eq!(place.routes, saved.routes);
+        assert_eq!(place.fingerprint, saved.fingerprint);
+    }
+
+    #[test]
+    fn learning_a_fingerprint_never_overwrites_the_pin() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        store.begin_add();
+        {
+            let editor = store.editor.as_mut().unwrap();
+            editor.user = "ada".into();
+            editor.host = "riverwood".into();
+        }
+        store.save_editor();
+        let id = store.places.last().unwrap().id;
+        store.learn_fingerprint(id, "SHA256:ONE");
+        store.learn_fingerprint(id, "SHA256:TWO");
+        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        assert_eq!(place.fingerprint.as_deref(), Some("SHA256:ONE"));
     }
 
     #[test]

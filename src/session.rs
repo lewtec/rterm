@@ -10,6 +10,7 @@ use rterm::attach::CONNECT_TIMEOUT_SECONDS;
 use rterm::driver;
 use rterm::kitty::Keyboard;
 use rterm::place::Place;
+use rterm::route::Route;
 use rterm::watchdog::Watchdog;
 
 enum Event {
@@ -44,7 +45,7 @@ pub enum Pump {
 }
 
 impl Session {
-    pub fn start(place: &Place, generation: u32) -> Result<Self, String> {
+    pub fn start(place: &Place, route: Option<&Route>, generation: u32) -> Result<Self, String> {
         let rows = NonZeroU16::new(24).expect("rows");
         let cols = NonZeroU16::new(80).expect("cols");
         let system = portable_pty::native_pty_system();
@@ -68,7 +69,7 @@ impl Session {
             let _ = std::fs::File::create(path);
         }
         let log_arg = log.as_ref().map(|path| path.to_string_lossy().into_owned());
-        let mut launch = driver::launch(place, log_arg.as_deref());
+        let mut launch = driver::launch(place, route, log_arg.as_deref());
         if !place.is_local() {
             launch.executable = driver::ssh_program();
         }

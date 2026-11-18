@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::driver::{self, SSH_EXECUTABLE};
 use crate::place::Place;
+use crate::route::Route;
 use crate::uuidv7::uuid_upper;
 
 pub const MAX_BYTES: usize = 10 * 1024 * 1024;
@@ -55,6 +56,7 @@ pub type UploadHook<'a> = &'a mut dyn FnMut(&[u8], &[String]) -> Result<(), Imag
 pub fn deliver(
     png: &[u8],
     place: &Place,
+    route: Option<&Route>,
     paste_id: Uuid,
     on_progress: &mut dyn FnMut(usize, usize),
     upload: Option<UploadHook<'_>>,
@@ -72,7 +74,7 @@ pub fn deliver(
     if !Path::new(&driver::control_path(place)).exists() {
         return Err(ImagePasteError::UploadFailed);
     }
-    let arguments = driver::upload_arguments(place, &path);
+    let arguments = driver::upload_arguments(place, route, &path);
     if let Some(upload) = upload {
         upload(png, &arguments)?;
         on_progress(png.len(), png.len());
@@ -194,6 +196,7 @@ mod tests {
         let result = deliver(
             png,
             &place,
+            None,
             id,
             &mut |sent, total| progress.push((sent, total)),
             None,
@@ -217,7 +220,7 @@ mod tests {
         let png = vec![0u8; MAX_BYTES + 1];
         let place = Place::new("ada", "", Backend::Herdr, None);
         assert_eq!(
-            deliver(&png, &place, Uuid::new_v4(), &mut |_, _| {}, None),
+            deliver(&png, &place, None, Uuid::new_v4(), &mut |_, _| {}, None),
             Err(ImagePasteError::TooLarge)
         );
     }
@@ -230,6 +233,7 @@ mod tests {
         let result = deliver(
             png,
             &place,
+            None,
             Uuid::new_v4(),
             &mut |_, _| {},
             Some(&mut |_, _| {
@@ -253,9 +257,10 @@ mod tests {
         let result = deliver(
             png,
             &place,
+            None,
             id,
             &mut |_, _| {},
-            Some(&mut |data, arguments| {
+            Some(&mut |data: &[u8], arguments: &[String]| {
                 uploaded = Some((data.to_vec(), arguments.to_vec()));
                 Ok(())
             }),
@@ -264,7 +269,10 @@ mod tests {
         assert_eq!(result.unwrap(), host_path(id));
         let (data, arguments) = uploaded.unwrap();
         assert_eq!(data, png);
-        assert_eq!(arguments, driver::upload_arguments(&place, &host_path(id)));
+        assert_eq!(
+            arguments,
+            driver::upload_arguments(&place, None, &host_path(id))
+        );
     }
 
     #[test]
