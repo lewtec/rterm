@@ -843,13 +843,8 @@ impl RtermApp {
                         let current = in_use
                             .as_ref()
                             .is_some_and(|current| route::same_route(current, &route));
-                        let label = format!(
-                            "{} {} ({})",
-                            if current { "✓" } else { "  " },
-                            route.display(),
-                            route.kind.label()
-                        );
-                        if ui.selectable_label(current, label).clicked() {
+                        let label = format!("{} ({})", route.display(), route.kind.label());
+                        if ui.radio(current, label).clicked() {
                             self.forced_routes.insert(place.id, route.clone());
                             self.store.reconnect(place.id);
                             ui.close_menu();
@@ -998,8 +993,8 @@ impl RtermApp {
                                 .as_ref()
                                 .is_some_and(|current| route::same_route(current, route));
                             ui.monospace(format!(
-                                "{}{}",
-                                if current { "✓ " } else { "" },
+                                "{} {}",
+                                if current { "✓" } else { " " },
                                 route.display()
                             ));
                             if route.last {
