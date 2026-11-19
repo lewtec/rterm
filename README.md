@@ -14,9 +14,9 @@ Each tab is a **place**: a saved attach target. Click a tab to attach. Sleep dro
 
 ## Places
 
-A place is user, host, backend (`herdr`, `tmux`, or `screen`), and a session name for tmux and screen. One node may be open through several accesses: a Herdr tab, a tmux session `dev`, another `ops`. Each is its own tab, and they share the node's fingerprint, user, and endpoints.
+A place is user, host, backend (`herdr`, `tmux`, or `screen`), and a session name for tmux and screen. One node may be open through several accesses: a Herdr tab, a tmux session `dev`, another `ops`. Each is its own tab, and they share the node's fingerprint, user, and endpoints. The duplicate key is user + fingerprint + access, so another login on the same machine is another tab, not a duplicate.
 
-A node names one machine and pins its SSH host key fingerprint. It may have several routes: a saved host, `<name>.local` (mDNS), or a Tailscale MagicDNS name or IP. Reconnecting tries the route that worked last; when it fails, the pane lists the other ways in and the one you pick becomes the last route. **Reconnect as** in the tab menu lists every endpoint and marks the one in use. **New session** in the same menu opens another access to the node you are on. The first verified route on an unpinned place teaches the fingerprint.
+A node names one machine and pins its SSH host key fingerprint. It may have several routes: a saved host, `<name>.local` (mDNS), or a Tailscale MagicDNS name or IP. Reconnecting tries the route that worked last; when it fails, the pane lists the other ways in and the one you pick becomes the last route. **Reconnect as** in the tab menu lists every endpoint and marks the one in use. **New session** in the same menu, or ⌘N, opens another access to the node you are on; it lists the accesses already open there and suggests a backend that is not in use yet. The first verified route on an unpinned place teaches the fingerprint.
 
 The catalog is `~/Documents/rterm/*.rterm-place`. The app writes it. Edits on disk reload. Use **+** or **Place → Add Place…**. Add Place asks only for **user** and an **endpoint** (hostname, IP, SSH alias, or `user@host`). The user is optional: empty uses your login, and a login typed in the endpoint moves to the user field instead of repeating before the host. rterm never reads or writes `~/.ssh/config`; when the endpoint is an ssh alias, the `ssh` rterm runs resolves it as usual. The SSH host key fingerprint identifies the node; the endpoint is just one way to reach it. rterm connects once, reads the host key, and adds the endpoint to the node that owns that fingerprint, creating a tab only when no node has it yet. The same node reached through another address becomes another endpoint on the existing tabs, not a duplicate. A place from a v1 catalog has no fingerprint yet, so the verified endpoint completes it instead of adding a second tab. Editing a place keeps the full form with a **Find routes** button, and it edits that tab's access, not the node's identity.
 
@@ -55,7 +55,8 @@ Tab dots: grey idle, green alive, red failed. SSH keepalives make a dead path ex
 | --- | --- |
 | ⌘1 … ⌘9 | Select place 1–9 |
 | ⌘0 | Select place 10 |
-| ⌘N | Add place |
+| ⌘N | New session on the selected node |
+| ⌘⇧N | Add place |
 | ⌘R | Reconnect the selected place |
 | Ctrl+⌘F | Enter or exit fill screen. On Linux, ⌘ is the Super key |
 | ⌘V | Paste text, or an image-only clipboard as a PNG path |

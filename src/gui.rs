@@ -61,6 +61,8 @@ struct NewSession {
     source: Uuid,
     backend: Backend,
     session: String,
+    /// Ask for the session field on the first frame, so ⌘N can be typed into.
+    focus: bool,
 }
 
 struct WizardRun {
@@ -413,6 +415,7 @@ impl RtermApp {
             match action {
                 Action::Write(bytes) => self.write_selected(&bytes),
                 Action::AddPlace => self.start_add(),
+                Action::NewSession => self.start_new_session(),
                 Action::Reconnect => self.store.reconnect_selected(),
                 Action::SelectIndex(index) => self.store.select_place_at(index),
                 Action::ToggleFill => self.toggle_fill(ctx),
@@ -846,33 +849,14 @@ impl RtermApp {
                 self.store.reconnect(place.id);
                 ui.close_menu();
             }
-            ui.menu_button("New session", |ui| {
-                ui.label(
-                    egui::RichText::new("Another access to the same node.")
-                        .small()
-                        .weak(),
-                );
-                if ui.button("Herdr").clicked() {
-                    self.store.add_session(place.id, Backend::Herdr, "");
-                    ui.close_menu();
-                }
-                if ui.button("tmux…").clicked() {
-                    self.new_session = Some(NewSession {
-                        source: place.id,
-                        backend: Backend::Tmux,
-                        session: String::new(),
-                    });
-                    ui.close_menu();
-                }
-                if ui.button("screen…").clicked() {
-                    self.new_session = Some(NewSession {
-                        source: place.id,
-                        backend: Backend::Screen,
-                        session: String::new(),
-                    });
-                    ui.close_menu();
-                }
-            });
+            if ui
+                .button("New session…")
+                .on_hover_text("Another access to the same node (⌘N)")
+                .clicked()
+            {
+                self.open_new_session(place.id);
+                ui.close_menu();
+            }
             let candidates = route::candidates(&place);
             if !candidates.is_empty() {
                 ui.menu_button("Reconnect as", |ui| {
@@ -1151,10 +1135,41 @@ impl RtermApp {
 
     fn start_add(&mut self) {
         self.settings_open = false;
+        self.new_session = None;
         self.wizard = None;
         self.fingerprint_check = None;
         self.fingerprint_error = None;
         self.store.begin_add();
+    }
+
+    /// ⌘N: another access to the node in the current tab, or Add Place when the
+    /// catalog is empty.
+    fn start_new_session(&mut self) {
+        match self.store.selected_id {
+            Some(id) => self.open_new_session(id),
+            None => self.start_add(),
+        }
+    }
+
+    fn open_new_session(&mut self, source: Uuid) {
+        if !self.store.places.iter().any(|place| place.id == source) {
+            return;
+        }
+        let tabs = self.store.node_tabs(source);
+        // Herdr is the default access, so offering it again is a dead end.
+        let backend = if tabs.iter().any(|place| place.backend == Backend::Herdr) {
+            Backend::Tmux
+        } else {
+            Backend::Herdr
+        };
+        self.store.editor = None;
+        self.settings_open = false;
+        self.new_session = Some(NewSession {
+            source,
+            backend,
+            session: String::new(),
+            focus: true,
+        });
     }
 
     fn start_fingerprint_check(&mut self) {
@@ -1528,7 +1543,7 @@ impl RtermApp {
             ui.add_space(6.0);
             ui.label(
                 egui::RichText::new(if is_remote(&editor) {
-                    "If this fingerprint is already in the catalog, the address becomes another endpoint on that node instead of a new tab."
+                    "If this fingerprint is already in the catalog for this login, the address becomes another endpoint on that node instead of a new tab. Another login opens another tab."
                 } else {
                     "This machine needs no host key or endpoint."
                 })
@@ -1601,11 +1616,13 @@ impl RtermApp {
             self.new_session = None;
             return;
         };
+        let tabs = self.store.node_tabs(draft.source);
         let mut open = true;
         let mut create = false;
         let mut dismiss = false;
+        let mut focus_tab = None;
         sheet(ctx, "new-session", &mut open, |ui| {
-            ui.set_min_width(360.0);
+            ui.set_min_width(380.0);
             ui.label(egui::RichText::new("New session").size(18.0));
             ui.label(
                 egui::RichText::new(format!(
@@ -1613,6 +1630,16 @@ impl RtermApp {
                 ))
                 .weak(),
             );
+            if tabs.len() > 1 {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("Open on this node").small().weak());
+                for tab in &tabs {
+                    let selected = tab.id == draft.source;
+                    if ui.selectable_label(selected, tab.display_label()).clicked() {
+                        focus_tab = Some(tab.id);
+                    }
+                }
+            }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.label("Backend");
@@ -1623,17 +1650,53 @@ impl RtermApp {
             if draft.backend != Backend::Herdr {
                 ui.add_space(6.0);
                 ui.label("Session");
-                ui.add(
+                let edit = ui.add(
                     egui::TextEdit::singleline(&mut draft.session)
-                        .hint_text("session name")
-                        .desired_width(260.0),
+                        .hint_text("session name, for example dev")
+                        .desired_width(260.0)
+                        .id(egui::Id::new("new-session-name")),
+                );
+                if draft.focus {
+                    edit.request_focus();
+                }
+            }
+            draft.focus = false;
+            ui.label(
+                egui::RichText::new(backend_hint(draft.backend))
+                    .small()
+                    .weak(),
+            );
+            ui.add_space(4.0);
+            let typed = draft.session.trim();
+            let session = if draft.backend == Backend::Herdr || typed.is_empty() {
+                None
+            } else {
+                Some(typed)
+            };
+            let exists = tabs
+                .iter()
+                .find(|tab| tab.backend == draft.backend && tab.session.as_deref() == session);
+            if let Some(existing) = exists {
+                ui.label(
+                    egui::RichText::new(format!("{} is already open.", existing.display_label()))
+                        .small()
+                        .weak(),
+                );
+            } else if draft.backend == Backend::Herdr
+                && let Some(herdr) = tabs.iter().find(|tab| tab.backend == Backend::Herdr)
+            {
+                ui.label(
+                    egui::RichText::new(format!("{} is already open.", herdr.display_label()))
+                        .small()
+                        .weak(),
                 );
             }
             ui.add_space(8.0);
-            let ready = draft.backend == Backend::Herdr || !draft.session.trim().is_empty();
+            let ready = exists.is_some() || draft.backend == Backend::Herdr || session.is_some();
+            let label = if exists.is_some() { "Show tab" } else { "Open" };
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .add_enabled(ready, egui::Button::new("Open").fill(ACCENT))
+                    .add_enabled(ready, egui::Button::new(label).fill(ACCENT))
                     .clicked()
                 {
                     create = true;
@@ -1643,6 +1706,11 @@ impl RtermApp {
                 }
             });
         });
+        if let Some(id) = focus_tab {
+            self.store.select(id);
+            self.new_session = None;
+            return;
+        }
         if dismiss {
             open = false;
         }
