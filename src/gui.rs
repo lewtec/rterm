@@ -1295,7 +1295,7 @@ impl RtermApp {
                     editor.fingerprint = fingerprint.clone();
                 }
                 if editor.routes.iter().any(|route| route.last) {
-                    route::push_unique(&mut editor.routes, route.clone());
+                    route::merge(&mut editor.routes, [route.clone()]);
                 } else {
                     route::remember(&mut editor.routes, route.clone());
                 }
@@ -1928,7 +1928,7 @@ fn place_field(ui: &mut egui::Ui, label: &str, text: &mut String, hint: &str) {
 }
 
 fn user_hint(editor: &PlaceEditorState) -> &'static str {
-    if Place::is_loopback_host(&editor.host) {
+    if Place::is_loopback_host(&editor_endpoint(editor)) {
         "defaults to you"
     } else {
         "empty uses your login"
@@ -2087,10 +2087,10 @@ fn editor_draft(editor: &PlaceEditorState) -> Option<Place> {
     // The endpoint is the first route, so discovery and probing see the same
     // list the catalog will store.
     let mut routes = Vec::new();
-    route::push_unique(&mut routes, Route::direct(host));
-    for route in editor.routes.clone() {
-        route::merge(&mut routes, [route]);
-    }
+    route::merge(
+        &mut routes,
+        std::iter::once(Route::direct(host)).chain(editor.routes.clone()),
+    );
     Some(Place {
         id: Uuid::new_v4(),
         user: user.to_string(),

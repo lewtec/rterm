@@ -215,7 +215,7 @@ impl AppStore {
         }
         // The first route is the endpoint the user typed.
         let mut routes = Vec::new();
-        crate::route::push_unique(&mut routes, Route::direct(address));
+        crate::route::merge(&mut routes, [Route::direct(address)]);
         // Another login is another key, not another machine: it sees the same
         // endpoints.
         if !fingerprint.is_empty() {
@@ -349,8 +349,18 @@ impl AppStore {
             .iter_mut()
             .filter(|place| place.fingerprint.as_deref() == Some(fingerprint))
         {
-            crate::route::push_unique(&mut place.routes, route.clone());
+            crate::route::merge(&mut place.routes, [route.clone()]);
         }
+    }
+
+    /// Unpinned places, other than `target`, that answer to one of `addresses`.
+    fn unpinned_at(&self, target: Uuid, addresses: &[&str]) -> Vec<&Place> {
+        self.places
+            .iter()
+            .filter(|place| place.id != target)
+            .filter(|place| !place.is_pinned())
+            .filter(|place| addresses.iter().any(|address| place.points_at(address)))
+            .collect()
     }
 
     /// Fold unpinned places that are the same access as `target` into it: they
@@ -362,16 +372,13 @@ impl AppStore {
             .find(|place| place.id == target)
             .map(|place| (place.login_key(), place.backend, place.session.clone()));
         let victims: Vec<(Uuid, Vec<Route>)> = self
-            .places
-            .iter()
-            .filter(|place| place.id != target)
-            .filter(|place| !place.is_pinned())
+            .unpinned_at(target, addresses)
+            .into_iter()
             .filter(|place| {
                 key.as_ref().is_some_and(|key| {
                     key == &(place.login_key(), place.backend, place.session.clone())
                 })
             })
-            .filter(|place| addresses.iter().any(|address| place.points_at(address)))
             .map(|place| (place.id, place.routes.clone()))
             .collect();
         if victims.is_empty() {
@@ -397,11 +404,8 @@ impl AppStore {
             .map(|place| place.routes.clone())
             .unwrap_or_default();
         let victims: Vec<Uuid> = self
-            .places
-            .iter()
-            .filter(|place| place.id != target)
-            .filter(|place| !place.is_pinned())
-            .filter(|place| addresses.iter().any(|address| place.points_at(address)))
+            .unpinned_at(target, addresses)
+            .into_iter()
             .map(|place| place.id)
             .collect();
         for id in &victims {
@@ -485,18 +489,10 @@ impl AppStore {
         // form shows, with the radio's `last` mark unchanged.
         let mut routes = Vec::new();
         if draft.origin_id.is_some() {
-            for route in draft.routes {
-                let route = route.normalized();
-                if !route.host.is_empty() {
-                    crate::route::push_unique(&mut routes, route);
-                }
-            }
+            crate::route::merge(&mut routes, draft.routes);
         } else if !Place::is_local_host(&draft.host) {
-            crate::route::push_unique(&mut routes, Route::direct(draft.host.clone()));
-            for route in draft.routes {
-                let route = route.normalized();
-                crate::route::merge(&mut routes, [route]);
-            }
+            crate::route::merge(&mut routes, [Route::direct(draft.host.clone())]);
+            crate::route::merge(&mut routes, draft.routes);
             if !routes.iter().any(|route| route.last)
                 && let Some(endpoint) = routes.first_mut()
             {
@@ -1007,6 +1003,17 @@ mod tests {
         AppStore::new(CatalogIo::from_legacy_file(tmp.0.join("places.toml")))
     }
 
+    /// A place that already knows the node's host key.
+    fn pinned(user: &str, host: &str, backend: Backend, session: Option<&str>) -> Place {
+        let mut place = Place::new(user, host, backend, session.map(str::to_string));
+        place.fingerprint = Some("SHA256:NODE".into());
+        place
+    }
+
+    fn place_by_id(store: &AppStore, id: Uuid) -> &Place {
+        store.places.iter().find(|place| place.id == id).unwrap()
+    }
+
     #[test]
     fn consume_pending_place_selects_matching_place() {
         let tmp = Tmp::new();
@@ -1063,7 +1070,7 @@ mod tests {
         let id = store.places[0].id;
         store.remember_route(id, &Route::direct("riverwood"));
         store.remember_route(id, &Route::mdns("riverwood.local"));
-        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        let place = place_by_id(&store, id);
         let last: Vec<_> = place.routes.iter().filter(|route| route.last).collect();
         assert_eq!(last.len(), 1);
         assert_eq!(last[0].host, "riverwood.local");
@@ -1082,7 +1089,7 @@ mod tests {
         );
         assert_eq!(store.places.len(), count + 1);
         assert_eq!(store.selected_id, Some(id));
-        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        let place = place_by_id(&store, id);
         assert_eq!(place.endpoint_host(), "riverwood");
         assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
         // The typed endpoint is the first route and the probed one is marked
@@ -1099,21 +1106,15 @@ mod tests {
     fn add_endpoint_folds_a_route_into_the_node_with_that_fingerprint() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
-        let mut node = Place::new("ada", "riverwood", Backend::Herdr, None);
+        let mut node = pinned("ada", "riverwood", Backend::Herdr, None);
         node.id = store.places[0].id;
-        node.fingerprint = Some("SHA256:NODE".into());
-        node.routes = vec![Route::direct("riverwood")];
         store.places[0] = node.clone();
         let count = store.places.len();
         let id = store.add_endpoint("ada", "riften", "SHA256:NODE", Route::mdns("riften.local"));
         assert_eq!(id, node.id);
         assert_eq!(store.places.len(), count);
         assert_eq!(store.selected_id, Some(node.id));
-        let merged = store
-            .places
-            .iter()
-            .find(|place| place.id == node.id)
-            .unwrap();
+        let merged = place_by_id(&store, node.id);
         assert_eq!(merged.user, "ada");
         assert!(merged.routes.iter().any(|route| route.host == "riverwood"));
         assert!(
@@ -1138,7 +1139,7 @@ mod tests {
         );
         assert_eq!(returned, id);
         assert_eq!(store.places.len(), 1);
-        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        let place = place_by_id(&store, id);
         assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
         assert_eq!(place.routes.len(), 1);
     }
@@ -1172,16 +1173,14 @@ mod tests {
     fn add_session_opens_another_tab_of_the_same_node() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
-        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
-        herdr.fingerprint = Some("SHA256:NODE".into());
-        herdr.routes.push(Route::direct("riverwood"));
+        let herdr = pinned("ada", "riverwood", Backend::Herdr, None);
         store.places = vec![herdr.clone()];
         let id = store.add_session(herdr.id, Backend::Tmux, "dev");
         assert_ne!(id, herdr.id);
         assert_eq!(store.places.len(), 2);
         assert_eq!(store.selected_id, Some(id));
         assert_eq!(store.places[1].id, id);
-        let tab = store.places.iter().find(|place| place.id == id).unwrap();
+        let tab = place_by_id(&store, id);
         assert_eq!(tab.fingerprint.as_deref(), Some("SHA256:NODE"));
         assert_eq!(tab.user, "ada");
         assert_eq!(tab.backend, Backend::Tmux);
@@ -1193,10 +1192,8 @@ mod tests {
     fn add_session_reuses_an_existing_tab() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
-        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
-        herdr.fingerprint = Some("SHA256:NODE".into());
-        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
-        tmux.fingerprint = Some("SHA256:NODE".into());
+        let herdr = pinned("ada", "riverwood", Backend::Herdr, None);
+        let tmux = pinned("ada", "riverwood", Backend::Tmux, Some("dev"));
         store.places = vec![herdr.clone(), tmux.clone()];
         let id = store.add_session(herdr.id, Backend::Tmux, "dev");
         assert_eq!(id, tmux.id);
@@ -1208,12 +1205,8 @@ mod tests {
     fn add_endpoint_puts_the_route_on_every_tab_of_the_node() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
-        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
-        herdr.fingerprint = Some("SHA256:NODE".into());
-        herdr.routes.push(Route::direct("riverwood"));
-        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
-        tmux.fingerprint = Some("SHA256:NODE".into());
-        tmux.routes.push(Route::direct("riverwood"));
+        let herdr = pinned("ada", "riverwood", Backend::Herdr, None);
+        let tmux = pinned("ada", "riverwood", Backend::Tmux, Some("dev"));
         store.places = vec![herdr, tmux];
         store.add_endpoint("ada", "riften", "SHA256:NODE", Route::mdns("riften.local"));
         assert_eq!(store.places.len(), 2);
@@ -1231,10 +1224,8 @@ mod tests {
     fn remember_route_updates_every_tab_of_the_node() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
-        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
-        herdr.fingerprint = Some("SHA256:NODE".into());
-        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
-        tmux.fingerprint = Some("SHA256:NODE".into());
+        let herdr = pinned("ada", "riverwood", Backend::Herdr, None);
+        let tmux = pinned("ada", "riverwood", Backend::Tmux, Some("dev"));
         store.places = vec![herdr.clone(), tmux];
         store.remember_route(herdr.id, &Route::mdns("riverwood.local"));
         for place in &store.places {
@@ -1251,8 +1242,7 @@ mod tests {
     fn add_endpoint_adopts_another_session_of_an_unpinned_node() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
-        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
-        herdr.fingerprint = Some("SHA256:NODE".into());
+        let herdr = pinned("ada", "riverwood", Backend::Herdr, None);
         let stale = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
         store.places = vec![herdr, stale.clone()];
         store.add_endpoint(
@@ -1262,11 +1252,7 @@ mod tests {
             Route::direct("riverwood"),
         );
         assert_eq!(store.places.len(), 2);
-        let tab = store
-            .places
-            .iter()
-            .find(|place| place.id == stale.id)
-            .unwrap();
+        let tab = place_by_id(&store, stale.id);
         assert_eq!(tab.fingerprint.as_deref(), Some("SHA256:NODE"));
         assert_eq!(tab.session.as_deref(), Some("dev"));
     }
@@ -1275,15 +1261,13 @@ mod tests {
     fn add_endpoint_with_another_login_opens_another_tab() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
-        let mut node = Place::new("ada", "riverwood", Backend::Herdr, None);
+        let mut node = pinned("ada", "riverwood", Backend::Herdr, None);
         node.id = store.places[0].id;
-        node.fingerprint = Some("SHA256:NODE".into());
-        node.routes = vec![Route::direct("riverwood")];
         store.places[0] = node.clone();
         let id = store.add_endpoint("bob", "riften", "SHA256:NODE", Route::mdns("riften.local"));
         assert_ne!(id, node.id);
         assert_eq!(store.places.len(), 2);
-        let tab = store.places.iter().find(|place| place.id == id).unwrap();
+        let tab = place_by_id(&store, id);
         assert_eq!(tab.user, "bob");
         assert_eq!(tab.fingerprint.as_deref(), Some("SHA256:NODE"));
         // The login is another key, but the machine's endpoints still count.
@@ -1297,21 +1281,16 @@ mod tests {
 
     #[test]
     fn normalize_places_keeps_two_logins_of_one_node_apart() {
-        let mut ada = Place::new("ada", "riverwood", Backend::Herdr, None);
-        ada.fingerprint = Some("SHA256:NODE".into());
-        let mut bob = Place::new("bob", "riverwood", Backend::Herdr, None);
-        bob.fingerprint = Some("SHA256:NODE".into());
+        let ada = pinned("ada", "riverwood", Backend::Herdr, None);
+        let bob = pinned("bob", "riverwood", Backend::Herdr, None);
         let normalized = normalize_places(vec![ada, bob]);
         assert_eq!(normalized.len(), 2);
     }
 
     #[test]
     fn normalize_places_keeps_one_node_per_fingerprint() {
-        let mut first = Place::new("ada", "riverwood", Backend::Herdr, None);
-        first.fingerprint = Some("SHA256:NODE".into());
-        first.routes.push(Route::direct("riverwood"));
-        let mut second = Place::new("ada", "riften", Backend::Herdr, None);
-        second.fingerprint = Some("SHA256:NODE".into());
+        let first = pinned("ada", "riverwood", Backend::Herdr, None);
+        let mut second = pinned("ada", "riften", Backend::Herdr, None);
         second.routes.push(Route::mdns("riften.local"));
         let normalized = normalize_places(vec![first.clone(), second]);
         assert_eq!(normalized.len(), 1);
@@ -1326,10 +1305,9 @@ mod tests {
 
     #[test]
     fn normalize_places_completes_the_unpinned_copy_of_a_pinned_node() {
-        let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
-        pinned.fingerprint = Some("SHA256:NODE".into());
+        let node = pinned("ada", "riverwood", Backend::Herdr, None);
         let stale = Place::new("ada", "riverwood", Backend::Herdr, None);
-        let normalized = normalize_places(vec![stale.clone(), pinned]);
+        let normalized = normalize_places(vec![stale.clone(), node]);
         assert_eq!(normalized.len(), 1);
         // The tab the user already had stays; it just learns the pin.
         assert_eq!(normalized[0].id, stale.id);
@@ -1340,9 +1318,8 @@ mod tests {
     fn normalize_places_keeps_the_label_of_the_older_copy() {
         let mut stale = Place::new("ada", "riverwood", Backend::Tmux, Some("main".into()));
         stale.label = Some("Work".into());
-        let mut pinned = Place::new("ada", "riverwood", Backend::Tmux, Some("main".into()));
-        pinned.fingerprint = Some("SHA256:NODE".into());
-        let normalized = normalize_places(vec![stale, pinned]);
+        let node = pinned("ada", "riverwood", Backend::Tmux, Some("main"));
+        let normalized = normalize_places(vec![stale, node]);
         assert_eq!(normalized.len(), 1);
         assert_eq!(normalized[0].fingerprint.as_deref(), Some("SHA256:NODE"));
         assert_eq!(normalized[0].label.as_deref(), Some("Work"));
@@ -1351,11 +1328,8 @@ mod tests {
 
     #[test]
     fn normalize_places_keeps_two_sessions_of_one_node_as_two_tabs() {
-        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
-        herdr.fingerprint = Some("SHA256:NODE".into());
-        herdr.routes.push(Route::direct("riverwood"));
-        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
-        tmux.fingerprint = Some("SHA256:NODE".into());
+        let herdr = pinned("ada", "riverwood", Backend::Herdr, None);
+        let mut tmux = pinned("ada", "riverwood", Backend::Tmux, Some("dev"));
         tmux.routes.push(Route::mdns("riverwood.local"));
         let normalized = normalize_places(vec![herdr, tmux]);
         assert_eq!(normalized.len(), 2);
@@ -1396,7 +1370,7 @@ mod tests {
             "SHA256:NODE",
             Route::direct("lucao.whiterun@cloud.shellhub.io"),
         );
-        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        let place = place_by_id(&store, id);
         assert_eq!(place.user, "lucasew");
         assert_eq!(place.endpoint_host(), "lucao.whiterun@cloud.shellhub.io");
         assert_eq!(
@@ -1430,7 +1404,7 @@ mod tests {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
         let id = store.add_local_place("");
-        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        let place = place_by_id(&store, id);
         assert!(place.is_local());
         assert_eq!(place.user, login_name());
     }
@@ -1550,11 +1524,7 @@ mod tests {
             Some("SHA256:C8olMcLxERkizT4dlzO1z85UVxdq")
         );
         let reloaded = store_in(&tmp);
-        let place = reloaded
-            .places
-            .iter()
-            .find(|place| place.id == saved.id)
-            .unwrap();
+        let place = place_by_id(&reloaded, saved.id);
         assert_eq!(place.routes, saved.routes);
         assert_eq!(place.fingerprint, saved.fingerprint);
     }
@@ -1585,11 +1555,7 @@ mod tests {
             ];
         }
         store.save_editor();
-        let saved = store
-            .places
-            .iter()
-            .find(|item| item.id == place.id)
-            .unwrap();
+        let saved = place_by_id(&store, place.id);
         assert_eq!(saved.endpoint_host(), "riften");
         assert_eq!(saved.routes[0], Route::direct("riften"));
         assert!(saved.routes[1].last);
@@ -1616,18 +1582,16 @@ mod tests {
         let id = store.places.last().unwrap().id;
         store.learn_fingerprint(id, "SHA256:ONE");
         store.learn_fingerprint(id, "SHA256:TWO");
-        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        let place = place_by_id(&store, id);
         assert_eq!(place.fingerprint.as_deref(), Some("SHA256:ONE"));
     }
 
     #[test]
     fn learning_a_pin_folds_the_duplicate_of_the_same_access() {
-        let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
-        pinned.fingerprint = Some("SHA256:NODE".into());
-        pinned.routes.push(Route::direct("riverwood"));
+        let node = pinned("ada", "riverwood", Backend::Herdr, None);
         let unpinned = Place::new("ada", "riverwood", Backend::Herdr, None);
         let mut store = store_in(&Tmp::new());
-        store.places = vec![pinned, unpinned.clone()];
+        store.places = vec![node, unpinned.clone()];
         store.learn_fingerprint(unpinned.id, "SHA256:NODE");
         assert_eq!(store.places.len(), 1);
         // The tab that just connected is the one that stays.
@@ -1642,18 +1606,13 @@ mod tests {
 
     #[test]
     fn learning_a_pin_keeps_another_access_apart() {
-        let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
-        pinned.fingerprint = Some("SHA256:NODE".into());
+        let node = pinned("ada", "riverwood", Backend::Herdr, None);
         let tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
         let mut store = store_in(&Tmp::new());
-        store.places = vec![pinned, tmux.clone()];
+        store.places = vec![node, tmux.clone()];
         store.learn_fingerprint(tmux.id, "SHA256:NODE");
         assert_eq!(store.places.len(), 2);
-        let tab = store
-            .places
-            .iter()
-            .find(|place| place.id == tmux.id)
-            .unwrap();
+        let tab = place_by_id(&store, tmux.id);
         assert_eq!(tab.fingerprint.as_deref(), Some("SHA256:NODE"));
     }
 

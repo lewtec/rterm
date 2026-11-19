@@ -150,31 +150,20 @@ pub fn candidates(place: &Place) -> Vec<Route> {
         return out;
     }
     for route in place.routes.iter().filter(|route| route.last) {
-        push_unique(&mut out, route.clone());
+        merge(&mut out, [route.clone()]);
     }
     for route in &place.routes {
-        push_unique(&mut out, route.clone());
+        merge(&mut out, [route.clone()]);
     }
     let endpoint = place.endpoint_host();
     if let Some(name) = mdns_name(&endpoint) {
-        push_unique(&mut out, Route::mdns(name));
+        merge(&mut out, [Route::mdns(name)]);
     }
     for route in tailscale_routes(&endpoint) {
-        push_unique(&mut out, route);
+        merge(&mut out, [route]);
     }
     out.truncate(MAX_CANDIDATES);
     out
-}
-
-pub fn push_unique(routes: &mut Vec<Route>, route: Route) {
-    let route = route.normalized();
-    if route.host.is_empty() {
-        return;
-    }
-    if routes.iter().any(|existing| same_route(existing, &route)) {
-        return;
-    }
-    routes.push(route);
 }
 
 pub fn same_route(left: &Route, right: &Route) -> bool {
@@ -262,10 +251,10 @@ pub fn routes_for_peer(json: &str, name: &str) -> Vec<Route> {
     for peer in matched {
         let dns = trim_host(&peer.dns_name);
         if !dns.is_empty() {
-            push_unique(&mut routes, Route::tailscale(dns));
+            merge(&mut routes, [Route::tailscale(dns)]);
         }
         for ip in peer.ips {
-            push_unique(&mut routes, Route::tailscale(ip));
+            merge(&mut routes, [Route::tailscale(ip)]);
         }
     }
     routes
