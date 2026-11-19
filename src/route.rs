@@ -43,12 +43,14 @@ impl RouteKind {
 }
 
 /// One way to reach a node. `host` is what SSH resolves; `port` is optional so
-/// `~/.ssh/config` keeps owning the default.
+/// `~/.ssh/config` keeps owning the default. `last` marks the route that worked
+/// most recently, so a reconnect tries it before asking about the others.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Route {
     pub kind: RouteKind,
     pub host: String,
     pub port: Option<u16>,
+    pub last: bool,
 }
 
 impl Route {
@@ -57,6 +59,7 @@ impl Route {
             kind,
             host: host.into(),
             port: None,
+            last: false,
         }
     }
 
@@ -84,20 +87,62 @@ impl Route {
             kind: self.kind,
             host: trim_host(&self.host),
             port: self.port,
+            last: self.last,
         }
+    }
+}
+
+/// The route that worked most recently, if the catalog remembers one.
+pub fn last_route(place: &Place) -> Option<&Route> {
+    place.routes.iter().find(|route| route.last)
+}
+
+/// Mark `route` as the last one that worked and drop the mark from the rest.
+/// The route is added to the catalog the first time it is used.
+pub fn remember(routes: &mut Vec<Route>, route: Route) {
+    let mut route = route.normalized();
+    route.last = true;
+    merge(routes, [route]);
+}
+
+/// Fold routes into a list without losing the last-used mark: a route that is
+/// already there keeps its place, and an incoming `last` wins over the old one.
+pub fn merge(routes: &mut Vec<Route>, incoming: impl IntoIterator<Item = Route>) {
+    for route in incoming {
+        let route = route.normalized();
+        if route.host.is_empty() {
+            continue;
+        }
+        if route.last {
+            for existing in routes.iter_mut() {
+                existing.last = false;
+            }
+        }
+        if let Some(existing) = routes
+            .iter_mut()
+            .find(|existing| same_route(existing, &route))
+        {
+            existing.last |= route.last;
+            continue;
+        }
+        routes.push(route);
     }
 }
 
 /// Every route rterm should try for a place, best first:
 ///
-/// 1. routes saved in the catalog, in the order the user set
-/// 2. the place host itself (plain DNS or an IP)
-/// 3. `<short>.local` through mDNS
-/// 4. Tailscale peers that answer to the node name (MagicDNS name, then IPs)
+/// 1. the route that worked last
+/// 2. routes saved in the catalog, in the order the user set
+/// 3. the place host itself (plain DNS or an IP)
+/// 4. `<short>.local` through mDNS
+/// 5. Tailscale peers that answer to the node name (MagicDNS name, then IPs)
 pub fn candidates(place: &Place) -> Vec<Route> {
     let mut out = Vec::new();
     if place.is_local() || place.host.trim().is_empty() {
         return out;
+    }
+    for route in place.routes.iter().filter(|route| route.last) {
+        push_unique(&mut out, route.clone());
     }
     for route in &place.routes {
         push_unique(&mut out, route.clone());
@@ -287,6 +332,55 @@ mod tests {
         assert_eq!(routes[0], Route::direct("100.64.0.7"));
         assert_eq!(routes[1], Route::mdns("riverwood.local"));
         assert_eq!(routes[2], Route::direct("riverwood"));
+    }
+
+    #[test]
+    fn candidates_try_the_last_route_first() {
+        let mut place = place("riverwood");
+        place.routes = vec![
+            Route::direct("100.64.0.7"),
+            Route {
+                last: true,
+                ..Route::mdns("riverwood.local")
+            },
+        ];
+        let routes = candidates(&place);
+        assert_eq!(routes[0].host, "riverwood.local");
+        assert_eq!(routes[1].host, "100.64.0.7");
+    }
+
+    #[test]
+    fn remember_keeps_the_mark_on_one_route() {
+        let mut routes = vec![Route::direct("a"), Route::direct("b")];
+        remember(&mut routes, Route::direct("b"));
+        assert!(!routes[0].last);
+        assert!(routes[1].last);
+        remember(&mut routes, Route::direct("c"));
+        assert_eq!(routes.iter().filter(|route| route.last).count(), 1);
+        assert!(routes[2].last);
+    }
+
+    #[test]
+    fn merge_preserves_order_and_last() {
+        let mut routes = vec![Route::direct("a")];
+        merge(
+            &mut routes,
+            [
+                Route {
+                    last: true,
+                    ..Route::direct("b")
+                },
+                Route::direct("a"),
+            ],
+        );
+        assert_eq!(
+            routes
+                .iter()
+                .map(|route| route.host.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        assert!(routes[1].last);
     }
 
     #[test]

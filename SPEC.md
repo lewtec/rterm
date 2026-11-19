@@ -91,9 +91,11 @@ Host key exchange happens before authentication, so a route that presents a host
 
 When the place has no fingerprint, the first verified route teaches it. Persist that fingerprint before the attach starts. A route that presents another key is another node: never attach through it. If every route fails, fail the attach with the attempts.
 
+A place remembers the route that worked last (`last = true` on its route). The attach probes only that route. When it fails, the pane lists the other routes and the user retries with one of them; the one that works becomes the last route. A place with no remembered route probes its candidates once to establish one.
+
 Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>`, so every route shares one known_hosts identity. Do not write the user's `known_hosts`.
 
-The Add sheet is a three-step wizard: **Details** (host, backend, session), **Routes** (set the user, then probe every candidate and show each answer as it arrives), and **Review** (pin and route list before saving). Details only advances; it never saves. **Find routes** is also available when editing, where it adds verified routes to the existing list.
+The Add sheet is two steps: **Fingerprint** (host, backend, session; rterm probes once and pins the SSH host key) and **Routes** (user, then every way to reach that same fingerprint). A route that presents another key is listed as a mismatch and never kept. Saving a node whose fingerprint already belongs to a place with the same backend and session merges the new routes into that place instead of adding a duplicate. **Find routes** is also available when editing.
 
 Discovery runs without attaching. It lists reachable routes with their fingerprint, keeps the routes that match the pin, and saves the pin.
 
@@ -210,7 +212,7 @@ If a file in that directory changes on disk, reload.
 
 On first launch, migrate `~/Library/Application Support/rterm/places.toml` into that directory and delete the old file.
 
-Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`, optional `fingerprint`, and zero or more `[[place.route]]` records. A route has `kind`, `host`, and optional `port`.
+Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`, optional `fingerprint`, and zero or more `[[place.route]]` records. A route has `kind`, `host`, optional `port`, and optional `last` (the route that worked most recently).
 
 ```toml
 version = 2
@@ -229,6 +231,7 @@ host = "whiterun.local"
 [[place.route]]
 kind = "tailscale"
 host = "whiterun.tailnet.ts.net"
+last = true
 ```
 
 Version 1 files have no routes or fingerprint. They decode with no routes and no pin; `host` is still tried as the direct route. Write version 2 on the next save.

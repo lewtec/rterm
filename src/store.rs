@@ -232,6 +232,25 @@ impl AppStore {
             routes,
             fingerprint,
         };
+        if draft.origin_id.is_none()
+            && let Some(fingerprint) = place.fingerprint.as_deref()
+            && let Some(index) = self.places.iter().position(|item| {
+                item.fingerprint.as_deref() == Some(fingerprint)
+                    && item.backend == place.backend
+                    && item.session == place.session
+            })
+        {
+            // Same node, another way in: the fingerprint is the identity, so fold
+            // the new routes into the place that already owns it.
+            let mut existing = self.places[index].clone();
+            let existing_id = existing.id;
+            crate::route::merge(&mut existing.routes, place.routes.clone());
+            self.places[index] = existing;
+            self.editor = None;
+            self.persist();
+            self.select(existing_id);
+            return;
+        }
         let should_reattach =
             if let Some(index) = self.places.iter().position(|item| item.id == place.id) {
                 let idle = self
@@ -362,6 +381,20 @@ impl AppStore {
         }
         place.fingerprint = Some(fingerprint.to_string());
         self.persist();
+    }
+
+    pub fn remember_route(&mut self, id: Uuid, route: &Route) {
+        let changed = {
+            let Some(place) = self.places.iter_mut().find(|place| place.id == id) else {
+                return;
+            };
+            let before = place.routes.clone();
+            crate::route::remember(&mut place.routes, route.clone());
+            place.routes != before
+        };
+        if changed {
+            self.persist();
+        }
     }
 
     pub fn fail_attach(&mut self, id: Uuid, message: String, generation: Option<u32>) {
@@ -563,6 +596,58 @@ mod tests {
         assert_eq!(store.selected_id, Some(second));
         store.open_place_id(Uuid::new_v4());
         assert_eq!(store.selected_id, Some(second));
+    }
+
+    #[test]
+    fn remember_route_marks_the_route_used_last() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let id = store.places[0].id;
+        store.remember_route(id, &Route::direct("riverwood"));
+        store.remember_route(id, &Route::mdns("riverwood.local"));
+        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        let last: Vec<_> = place.routes.iter().filter(|route| route.last).collect();
+        assert_eq!(last.len(), 1);
+        assert_eq!(last[0].host, "riverwood.local");
+    }
+
+    #[test]
+    fn adding_a_known_fingerprint_folds_routes_into_that_place() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let mut node = Place::new("ada", "riverwood", Backend::Herdr, None);
+        node.id = store.places[0].id;
+        node.fingerprint = Some("SHA256:NODE".into());
+        node.routes = vec![Route::direct("riverwood")];
+        store.places[0] = node.clone();
+        let count = store.places.len();
+        store.begin_add();
+        {
+            let editor = store.editor.as_mut().unwrap();
+            editor.user = "ada".into();
+            editor.host = "riften".into();
+            editor.backend = Backend::Herdr;
+            editor.fingerprint = "SHA256:NODE".into();
+            editor.routes = vec![Route {
+                last: true,
+                ..Route::mdns("riften.local")
+            }];
+        }
+        store.save_editor();
+        assert_eq!(store.places.len(), count);
+        assert_eq!(store.selected_id, Some(node.id));
+        let merged = store
+            .places
+            .iter()
+            .find(|place| place.id == node.id)
+            .unwrap();
+        assert!(merged.routes.iter().any(|route| route.host == "riverwood"));
+        assert!(
+            merged
+                .routes
+                .iter()
+                .any(|route| route.host == "riften.local" && route.last)
+        );
     }
 
     #[test]
