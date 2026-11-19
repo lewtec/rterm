@@ -12,12 +12,19 @@ const WRENCH: &str = "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.
 /// Lucide `x`.
 const X: &str = "M18 6 6 18 M6 6 12 12";
 
+/// Lucide `pencil`.
+const PENCIL: &str = "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5 19 9";
+
 pub fn paint_wrench(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
     paint_icon(painter, rect, color, WRENCH);
 }
 
 pub fn paint_x(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
     paint_icon(painter, rect, color, X);
+}
+
+pub fn paint_pencil(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    paint_icon(painter, rect, color, PENCIL);
 }
 
 fn paint_icon(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32, path: &str) {
@@ -338,7 +345,7 @@ fn vector_angle(ux: f32, uy: f32, vx: f32, vy: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{WRENCH, X, parse_path, tokenize};
+    use super::{PENCIL, WRENCH, X, parse_path, tokenize};
 
     #[test]
     fn wrench_is_one_closed_subpath() {
@@ -357,6 +364,14 @@ mod tests {
         let subpaths = parse_path(X);
         assert_eq!(subpaths.len(), 2);
         assert!(subpaths.iter().all(|subpath| !subpath.closed));
+    }
+
+    #[test]
+    fn pencil_is_a_body_and_a_stroke() {
+        let subpaths = parse_path(PENCIL);
+        assert_eq!(subpaths.len(), 2);
+        assert!(subpaths[0].closed);
+        assert!(!subpaths[1].closed);
     }
 
     #[test]
