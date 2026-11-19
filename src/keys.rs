@@ -40,6 +40,7 @@ pub enum Input {
 pub enum Action {
     Write(Vec<u8>),
     AddPlace,
+    NewSession,
     Reconnect,
     SelectIndex(usize),
     ToggleFill,
@@ -168,8 +169,11 @@ pub fn interpret_with(
                         out.push(Action::SaveEditor);
                     } else if *mac_cmd
                         && !*ctrl
-                        && let Some(action) = command_shortcut(*key)
-                        && !matches!(action, Action::Paste(_))
+                        && let Some(action) = command_shortcut(*key, *shift)
+                        && !matches!(
+                            action,
+                            Action::Paste(_) | Action::AddPlace | Action::NewSession
+                        )
                     {
                         out.push(action);
                     }
@@ -177,7 +181,7 @@ pub fn interpret_with(
                 }
                 if *mac_cmd
                     && !*ctrl
-                    && let Some(action) = command_shortcut(*key)
+                    && let Some(action) = command_shortcut(*key, *shift)
                 {
                     if matches!(action, Action::Paste(_)) {
                         saw_paste_key = true;
@@ -242,9 +246,11 @@ pub fn interpret_with(
     out
 }
 
-fn command_shortcut(key: NamedKey) -> Option<Action> {
+fn command_shortcut(key: NamedKey, shift: bool) -> Option<Action> {
     match key {
-        NamedKey::Letter(b'n') => Some(Action::AddPlace),
+        // ⌘N is another access to the node in front of you; ⌘⇧N adds a place.
+        NamedKey::Letter(b'n') if shift => Some(Action::AddPlace),
+        NamedKey::Letter(b'n') => Some(Action::NewSession),
         NamedKey::Letter(b'r') => Some(Action::Reconnect),
         NamedKey::Letter(b'v') => Some(Action::Paste(Gesture::CommandV)),
         NamedKey::Digit(0) => Some(Action::SelectIndex(9)),
@@ -454,13 +460,31 @@ mod tests {
     fn editor_swallows_text_and_keeps_place_shortcuts() {
         let batch = [
             Input::Text("a".into()),
-            key(NamedKey::Letter(b'n'), false, true, false, false),
+            key(NamedKey::Letter(b'r'), false, true, false, false),
             key(NamedKey::Enter, false, false, false, false),
             key(NamedKey::Digit(0), false, true, false, false),
         ];
         assert_eq!(
             interpret(&batch, false, true, true),
-            vec![Action::AddPlace, Action::SaveEditor, Action::SelectIndex(9),]
+            vec![
+                Action::Reconnect,
+                Action::SaveEditor,
+                Action::SelectIndex(9),
+            ]
+        );
+    }
+
+    #[test]
+    fn command_n_opens_a_session_and_shift_n_adds_a_place() {
+        let session = [key(NamedKey::Letter(b'n'), false, true, false, false)];
+        assert_eq!(
+            interpret(&session, false, false, false),
+            vec![Action::NewSession]
+        );
+        let place = [key(NamedKey::Letter(b'n'), false, true, false, true)];
+        assert_eq!(
+            interpret(&place, false, false, false),
+            vec![Action::AddPlace]
         );
     }
 

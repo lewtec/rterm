@@ -61,7 +61,7 @@ If the user leaves the label empty, the default is:
 
 Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local.
 
-Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id. Two places with the same fingerprint are tabs of one node and differ by backend and session.
+Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id. The key of a tab is the login, the fingerprint and the access: places with the same login and fingerprint are tabs of one node and differ by backend and session. Another login on the same machine is another tab.
 
 A tab opens one access to one node. The node's SSH identity is the pinned host key fingerprint, not a hostname. `host` is the name the user knows; `routes` are the ways to reach it, and they belong to the node, so every tab of it keeps the same list. One place may keep several routes and use any of them.
 
@@ -99,7 +99,7 @@ Add Place asks only for **user** and an **endpoint**. The endpoint may be a host
 
 **New session** in the tab menu opens another access to the node the tab belongs to: another backend or tmux/screen session name, sharing fingerprint, user, and routes. Choosing an access that already exists focuses its tab instead of duplicating it.
 
-The list holds one tab per access. A verified endpoint that reaches a place without a pin completes that place with the fingerprint instead of adding a second tab, and keeps its label and session. Tabs with the same fingerprint and different backend or session stay apart and share the routes. Loading folds duplicates the same way: by fingerprint and attachment first, then an unpinned place into the pinned node it reaches, then unpinned copies by switch key.
+The list holds one tab per access. A verified endpoint that reaches a place without a pin completes that place with the fingerprint instead of adding a second tab, and keeps its label and session. The duplicate key is login + fingerprint + backend + session: tabs with another access (or another login) stay apart and share the machine's routes. Loading folds duplicates the same way: by that key first, then an unpinned place into the pinned node it reaches, then unpinned copies by switch key.
 
 A place that already has its pin is never asked to confirm it again. A route that presents another key is another node and is never attached.
 

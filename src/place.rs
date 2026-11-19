@@ -70,6 +70,16 @@ impl Place {
         ) || value.ends_with(".localhost")
     }
 
+    /// The login this tab reports for the node. An empty user is the ssh
+    /// default, which is the local login.
+    pub fn login_key(&self) -> String {
+        if self.user.trim().is_empty() {
+            login_name()
+        } else {
+            self.user.trim().to_string()
+        }
+    }
+
     pub fn switch_key(&self) -> String {
         let shown_host = if self.is_local() {
             "localhost"
