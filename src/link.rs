@@ -183,7 +183,10 @@ mod tests {
         assert!(local.is_local());
 
         assert!(Place::parse_switch_key("ada@remote.example:tmux").is_none());
-        assert!(Place::parse_switch_key("remote.example:herdr").is_none());
+        // A missing login means the ssh login, so the key is still valid.
+        let no_user = Place::parse_switch_key("remote.example:herdr").unwrap();
+        assert_eq!(no_user.user, "");
+        assert_eq!(no_user.host, "remote.example");
     }
 
     #[test]
