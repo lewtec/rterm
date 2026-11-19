@@ -61,9 +61,9 @@ If the user leaves the label empty, the default is:
 
 Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local.
 
-Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id.
+Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id. Two places with the same fingerprint are tabs of one node and differ by backend and session.
 
-A place names one node. The node's SSH identity is the pinned host key fingerprint, not a hostname. `host` is the name the user knows; `routes` are the ways to reach it. One place may keep several routes and use any of them.
+A tab opens one access to one node. The node's SSH identity is the pinned host key fingerprint, not a hostname. `host` is the name the user knows; `routes` are the ways to reach it, and they belong to the node, so every tab of it keeps the same list. One place may keep several routes and use any of them.
 
 ## Routes
 
@@ -95,9 +95,11 @@ A place remembers the route that worked last (`last = true` on its route). The a
 
 Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>` when the route differs from the place's endpoint, so every route shares one known_hosts identity while an SSH config alias still resolves its own `HostName`. Do not write the user's `known_hosts`.
 
-Add Place asks only for **user** and an **endpoint**. The endpoint may be a hostname, an IP, or an SSH config alias; a login typed as `user@endpoint` moves to the user field instead of staying glued to the address. An empty user means your login. rterm never reads or writes `~/.ssh/config`; the `ssh` it runs resolves an alias the usual way. The SSH host key fingerprint is the node identity. rterm probes the endpoint once, reads its host key, and adds the endpoint to the place that already owns that fingerprint; when no place owns it, rterm creates one with that fingerprint and the endpoint. The endpoint is never a match key, so the same node reached through another address joins the existing place. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
+Add Place asks only for **user** and an **endpoint**. The endpoint may be a hostname, an IP, or an SSH config alias; a login typed as `user@endpoint` moves to the user field instead of staying glued to the address. An empty user means your login. rterm never reads or writes `~/.ssh/config`; the `ssh` it runs resolves an alias the usual way. The SSH host key fingerprint is the node identity. rterm probes the endpoint once, reads its host key, and adds the endpoint to the node that already owns that fingerprint, on every tab of it; when no node owns it, rterm creates one tab with that fingerprint and the endpoint. The endpoint is never a match key, so the same node reached through another address joins the existing tabs. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
 
-The list holds one tab per node. A verified endpoint that reaches a place without a pin completes that place with the fingerprint instead of adding a second tab, and keeps its label and session. Loading folds duplicates the same way: by fingerprint first, then an unpinned place into the pinned node it reaches, then unpinned copies by switch key.
+**New session** in the tab menu opens another access to the node the tab belongs to: another backend or tmux/screen session name, sharing fingerprint, user, and routes. Choosing an access that already exists focuses its tab instead of duplicating it.
+
+The list holds one tab per access. A verified endpoint that reaches a place without a pin completes that place with the fingerprint instead of adding a second tab, and keeps its label and session. Tabs with the same fingerprint and different backend or session stay apart and share the routes. Loading folds duplicates the same way: by fingerprint and attachment first, then an unpinned place into the pinned node it reaches, then unpinned copies by switch key.
 
 A place that already has its pin is never asked to confirm it again. A route that presents another key is another node and is never attached.
 
@@ -109,7 +111,7 @@ Discovery runs without attaching. It lists reachable routes with their fingerpri
 
 v1 has exactly one window. Always.
 
-The tab strip is the catalog. Every place is a tab. Tab order is catalog list order.
+The tab strip is the catalog. Every place is a tab; the same node may own several tabs, one per access. Tab order is catalog list order.
 
 Tabs do not close. An unused tab is idle. The user selects a tab to show that place.
 

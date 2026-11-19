@@ -46,6 +46,19 @@ impl Place {
         Self::is_loopback_host(&self.host) || is_this_machine(&self.host)
     }
 
+    /// A pinned place has learned (or been given) the node's host key.
+    pub fn is_pinned(&self) -> bool {
+        self.fingerprint
+            .as_deref()
+            .is_some_and(|pin| !pin.is_empty())
+    }
+
+    /// The access this tab opens. Tabs of the same node differ here: Herdr has
+    /// no session, tmux and screen name one.
+    pub fn same_attachment(&self, other: &Place) -> bool {
+        self.backend == other.backend && self.session == other.session
+    }
+
     pub fn is_loopback_host(host: &str) -> bool {
         let value = normalize_host(host);
         if is_ipv4_loopback(&value) {

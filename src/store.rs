@@ -163,11 +163,12 @@ impl AppStore {
     }
 
     /// Add `route` as a way to reach the node whose SSH host key fingerprint is
-    /// `fingerprint`. The fingerprint is the only identity: a node that already
-    /// owns it absorbs the route, otherwise this creates a node for it. A place
-    /// without a fingerprint (v1 or a deep link) has no identity yet, so when the
-    /// verified endpoint points at it, the place adopts the fingerprint instead
-    /// of showing up twice in the list.
+    /// `fingerprint`. The fingerprint identifies the node, not the tab: a node
+    /// may be open through several accesses (Herdr, a named tmux session, a
+    /// screen session), and every one of them gets the route. A place without a
+    /// fingerprint (v1 or a deep link) has no identity yet, so when the verified
+    /// endpoint points at it, the place adopts the fingerprint instead of
+    /// showing up twice in the list.
     pub fn add_endpoint(
         &mut self,
         user: impl Into<String>,
@@ -184,43 +185,29 @@ impl AppStore {
         let user = endpoint_user.unwrap_or(user);
         let address = address.trim().to_string();
         let probe = [address.as_str(), route.host.as_str()];
-        if !fingerprint.is_empty()
-            && let Some(index) = self
+        if !fingerprint.is_empty() {
+            let owner = self
                 .places
                 .iter()
-                .position(|place| place.fingerprint.as_deref() == Some(fingerprint.as_str()))
-        {
-            let id = self.places[index].id;
-            let before = self.places[index].routes.clone();
-            let absorbed = self.absorb_unpinned(id, &probe);
-            let changed = match self.places.iter_mut().find(|place| place.id == id) {
-                Some(place) => {
-                    crate::route::remember(&mut place.routes, route);
-                    place.routes != before
-                }
-                None => false,
-            };
-            if absorbed || changed {
+                .position(|place| place.fingerprint.as_deref() == Some(fingerprint.as_str()));
+            let pending = owner.or_else(|| {
+                self.places.iter().position(|place| {
+                    !place.is_pinned() && probe.iter().any(|address| place.points_at(address))
+                })
+            });
+            if let Some(index) = pending {
+                let target = self.places[index].id;
+                self.places[index].fingerprint = Some(fingerprint.clone());
+                // Same access, no pin: it is the same tab from before the pin.
+                self.absorb_unpinned(target, &probe);
+                // Another access (tmux dev, screen ops): another tab of the node.
+                self.adopt_unpinned(&fingerprint, target, &probe);
+                self.remember_on_node(&fingerprint, route);
                 self.persist();
+                let chosen = self.add_tab_of(&fingerprint, target);
+                self.select(chosen);
+                return chosen;
             }
-            self.select(id);
-            return id;
-        }
-        if !fingerprint.is_empty()
-            && let Some(index) = self.places.iter().position(|place| {
-                place.fingerprint.as_deref().is_none_or(str::is_empty)
-                    && probe.iter().any(|address| place.points_at(address))
-            })
-        {
-            let id = self.places[index].id;
-            self.places[index].fingerprint = Some(fingerprint);
-            self.absorb_unpinned(id, &probe);
-            if let Some(place) = self.places.iter_mut().find(|place| place.id == id) {
-                crate::route::remember(&mut place.routes, route);
-            }
-            self.persist();
-            self.select(id);
-            return id;
         }
         let mut routes = Vec::new();
         crate::route::remember(&mut routes, route);
@@ -241,15 +228,105 @@ impl AppStore {
         self.insert_place(place)
     }
 
-    /// Merge routes from places that have no fingerprint but point at one of
-    /// `addresses` into `target`, then drop them. They are the same node from
-    /// before its fingerprint was known.
+    /// Open another access to the same node: the same user, endpoints, routes and
+    /// fingerprint, with another backend and session. Selecting an access that
+    /// already exists just focuses its tab.
+    pub fn add_session(
+        &mut self,
+        source: Uuid,
+        backend: Backend,
+        session: impl Into<String>,
+    ) -> Uuid {
+        let session = session.into().trim().to_string();
+        let session = if backend == Backend::Herdr || session.is_empty() {
+            None
+        } else {
+            Some(session)
+        };
+        let Some(origin) = self.places.iter().find(|place| place.id == source).cloned() else {
+            return source;
+        };
+        let existing = self.places.iter().position(|place| {
+            place.id != source
+                && place.host.eq_ignore_ascii_case(&origin.host)
+                && place.user == origin.user
+                && place.backend == backend
+                && place.session == session
+        });
+        if let Some(index) = existing {
+            let id = self.places[index].id;
+            self.select(id);
+            return id;
+        }
+        let place = Place {
+            id: Uuid::new_v4(),
+            user: origin.user.clone(),
+            host: origin.host.clone(),
+            backend,
+            session,
+            label: None,
+            routes: origin.routes.clone(),
+            fingerprint: origin.fingerprint.clone(),
+        };
+        let id = place.id;
+        let at = self
+            .places
+            .iter()
+            .position(|place| place.id == source)
+            .map(|index| index + 1)
+            .unwrap_or(self.places.len());
+        self.places.insert(at, place);
+        self.attaches.insert(id, PlaceAttach::default());
+        let _ = self.ensure_progress(id);
+        self.persist();
+        self.select(id);
+        id
+    }
+
+    /// The tab the Add flow should land on: Herdr is the default access, and Add
+    /// never introduces a backend or session of its own.
+    fn add_tab_of(&self, fingerprint: &str, fallback: Uuid) -> Uuid {
+        self.places
+            .iter()
+            .find(|place| {
+                place.fingerprint.as_deref() == Some(fingerprint)
+                    && place.backend == Backend::Herdr
+                    && place.session.is_none()
+            })
+            .map(|place| place.id)
+            .unwrap_or(fallback)
+    }
+
+    /// Mark `route` as the one that worked on every tab of the node: a route is
+    /// a property of the node, not of the access.
+    fn remember_on_node(&mut self, fingerprint: &str, route: Route) {
+        for place in self
+            .places
+            .iter_mut()
+            .filter(|place| place.fingerprint.as_deref() == Some(fingerprint))
+        {
+            crate::route::remember(&mut place.routes, route.clone());
+        }
+    }
+
+    /// Fold unpinned places that are the same access as `target` into it: they
+    /// are the same tab from before its fingerprint was known.
     fn absorb_unpinned(&mut self, target: Uuid, addresses: &[&str]) -> bool {
+        let attachment = self
+            .places
+            .iter()
+            .find(|place| place.id == target)
+            .map(|place| (place.backend, place.session.clone()));
         let victims: Vec<(Uuid, Vec<Route>)> = self
             .places
             .iter()
             .filter(|place| place.id != target)
-            .filter(|place| place.fingerprint.as_deref().is_none_or(str::is_empty))
+            .filter(|place| !place.is_pinned())
+            .filter(|place| {
+                attachment
+                    .as_ref()
+                    .is_some_and(|key| key == &(place.backend, place.session.clone()))
+            })
             .filter(|place| addresses.iter().any(|address| place.points_at(address)))
             .map(|place| (place.id, place.routes.clone()))
             .collect();
@@ -264,6 +341,32 @@ impl AppStore {
         let dropped: HashSet<_> = victims.into_iter().map(|(id, _)| id).collect();
         self.places.retain(|place| !dropped.contains(&place.id));
         true
+    }
+
+    /// Give the pin to the unpinned places that are another access to the same
+    /// node, so they become tabs of it instead of duplicates.
+    fn adopt_unpinned(&mut self, fingerprint: &str, target: Uuid, addresses: &[&str]) -> bool {
+        let routes = self
+            .places
+            .iter()
+            .find(|place| place.id == target)
+            .map(|place| place.routes.clone())
+            .unwrap_or_default();
+        let victims: Vec<Uuid> = self
+            .places
+            .iter()
+            .filter(|place| place.id != target)
+            .filter(|place| !place.is_pinned())
+            .filter(|place| addresses.iter().any(|address| place.points_at(address)))
+            .map(|place| place.id)
+            .collect();
+        for id in &victims {
+            if let Some(place) = self.places.iter_mut().find(|place| place.id == *id) {
+                place.fingerprint = Some(fingerprint.to_string());
+                crate::route::merge(&mut place.routes, routes.clone());
+            }
+        }
+        !victims.is_empty()
     }
 
     fn insert_place(&mut self, place: Place) -> Uuid {
@@ -382,6 +485,18 @@ impl AppStore {
                 let _ = self.ensure_progress(place.id);
                 false
             };
+        // User and routes belong to the node, so the other tabs of it follow.
+        if let Some(pin) = place.fingerprint.as_deref().filter(|pin| !pin.is_empty()) {
+            for other in self
+                .places
+                .iter_mut()
+                .filter(|item| item.id != place.id)
+                .filter(|item| item.fingerprint.as_deref() == Some(pin))
+            {
+                other.user = place.user.clone();
+                crate::route::merge(&mut other.routes, place.routes.clone());
+            }
+        }
         self.editor = None;
         self.persist();
         if should_reattach {
@@ -500,13 +615,34 @@ impl AppStore {
     }
 
     pub fn remember_route(&mut self, id: Uuid, route: &Route) {
-        let changed = {
-            let Some(place) = self.places.iter_mut().find(|place| place.id == id) else {
-                return;
-            };
-            let before = place.routes.clone();
-            crate::route::remember(&mut place.routes, route.clone());
-            place.routes != before
+        let fingerprint = self
+            .places
+            .iter()
+            .find(|place| place.id == id)
+            .filter(|place| place.is_pinned())
+            .and_then(|place| place.fingerprint.clone());
+        let changed = match fingerprint {
+            Some(fingerprint) => {
+                let mut changed = false;
+                for place in self
+                    .places
+                    .iter_mut()
+                    .filter(|place| place.fingerprint.as_deref() == Some(fingerprint.as_str()))
+                {
+                    let before = place.routes.clone();
+                    crate::route::remember(&mut place.routes, route.clone());
+                    changed |= place.routes != before;
+                }
+                changed
+            }
+            None => {
+                let Some(place) = self.places.iter_mut().find(|place| place.id == id) else {
+                    return;
+                };
+                let before = place.routes.clone();
+                crate::route::remember(&mut place.routes, route.clone());
+                place.routes != before
+            }
         };
         if changed {
             self.persist();
@@ -644,57 +780,96 @@ fn fixture_places() -> Vec<Place> {
 /// fold by switch key. This heals v1 catalogs and earlier Add runs that kept
 /// the pre-fingerprint place next to the new one.
 fn normalize_places(places: Vec<Place>) -> Vec<Place> {
-    let mut out: Vec<Place> = Vec::new();
-    for mut place in places {
-        adopt_endpoint_user(&mut place);
-        let pinned = place
-            .fingerprint
-            .as_deref()
-            .is_some_and(|pin| !pin.is_empty());
-        if pinned {
-            if let Some(existing) = out
-                .iter_mut()
-                .find(|item| item.fingerprint == place.fingerprint)
-            {
-                fold_place(existing, place);
-                continue;
-            }
-            if let Some(index) = out.iter().position(|item| {
-                item.fingerprint.as_deref().is_none_or(str::is_empty)
-                    && endpoints_overlap(item, &place)
-            }) {
-                // Keep the tab position of the unpinned placeholder, but the
-                // pin owns the node and its route order.
-                let mut placeholder = std::mem::replace(&mut out[index], place);
-                let mut routes = std::mem::take(&mut placeholder.routes);
-                let node = &mut out[index];
-                crate::route::merge(&mut routes, std::mem::take(&mut node.routes));
-                node.routes = routes;
-                adopt_details(node, &placeholder);
-                continue;
-            }
-            out.push(place);
-            continue;
+    let mut places = places;
+    for place in &mut places {
+        adopt_endpoint_user(place);
+        if place.backend == Backend::Herdr {
+            // Herdr names no session; an old record may still carry one.
+            place.session = None;
         }
-        if let Some(existing) = out.iter_mut().find(|item| {
-            item.fingerprint
-                .as_deref()
-                .is_some_and(|pin| !pin.is_empty())
-                && endpoints_overlap(item, &place)
-        }) {
-            fold_place(existing, place);
-            continue;
-        }
-        if let Some(existing) = out.iter_mut().find(|item| {
-            item.fingerprint.as_deref().is_none_or(str::is_empty)
-                && item.switch_key().eq_ignore_ascii_case(&place.switch_key())
-        }) {
-            fold_place(existing, place);
-            continue;
-        }
-        out.push(place);
     }
+    // An unpinned place that reaches a pinned node is a tab of that node from
+    // before the pin, not a second node.
+    let pins: Vec<(String, Vec<String>)> = places
+        .iter()
+        .filter(|place| place.is_pinned())
+        .filter_map(|place| {
+            place
+                .fingerprint
+                .clone()
+                .map(|pin| (pin, place.endpoint_hosts()))
+        })
+        .collect();
+    for place in places.iter_mut().filter(|place| !place.is_pinned()) {
+        let hosts = place.endpoint_hosts();
+        let owner = pins.iter().find(|(_, pin_hosts)| {
+            !hosts.is_empty() && pin_hosts.iter().any(|host| hosts.contains(host))
+        });
+        if let Some((pin, _)) = owner {
+            place.fingerprint = Some(pin.clone());
+        }
+    }
+    // One tab per access: a duplicate needs the same node *and* the same backend
+    // and session.
+    let mut out: Vec<Place> = Vec::new();
+    for place in places {
+        let duplicate = out
+            .iter()
+            .position(|item| same_node(item, &place) && item.same_attachment(&place));
+        if let Some(index) = duplicate {
+            fold_place(&mut out[index], place);
+        } else {
+            out.push(place);
+        }
+    }
+    share_routes(&mut out);
     out
+}
+
+/// Routes belong to the node, so every tab of it keeps the same list. A user
+/// typed on any tab is the node's login too.
+fn share_routes(places: &mut [Place]) {
+    let mut pins: Vec<String> = places
+        .iter()
+        .filter(|place| place.is_pinned())
+        .filter_map(|place| place.fingerprint.clone())
+        .collect();
+    pins.sort();
+    pins.dedup();
+    for pin in pins {
+        let members: Vec<usize> = places
+            .iter()
+            .enumerate()
+            .filter(|(_, place)| place.fingerprint.as_deref() == Some(pin.as_str()))
+            .map(|(index, _)| index)
+            .collect();
+        let routes: Vec<Route> = members
+            .iter()
+            .flat_map(|index| places[*index].routes.clone())
+            .collect();
+        let user = members
+            .iter()
+            .map(|index| places[*index].user.clone())
+            .find(|user| !user.trim().is_empty());
+        for index in members {
+            crate::route::merge(&mut places[index].routes, routes.clone());
+            if places[index].user.trim().is_empty()
+                && let Some(user) = &user
+            {
+                places[index].user = user.clone();
+            }
+        }
+    }
+}
+
+fn same_node(left: &Place, right: &Place) -> bool {
+    match (
+        left.fingerprint.as_deref().filter(|pin| !pin.is_empty()),
+        right.fingerprint.as_deref().filter(|pin| !pin.is_empty()),
+    ) {
+        (Some(left), Some(right)) => left == right,
+        _ => left.switch_key().eq_ignore_ascii_case(&right.switch_key()),
+    }
 }
 
 /// A login typed inside the endpoint (`user@host`) moves to the user field. Old
@@ -727,15 +902,6 @@ fn adopt_details(node: &mut Place, copy: &Place) {
     if node.user.trim().is_empty() {
         node.user = copy.user.clone();
     }
-}
-
-fn endpoints_overlap(left: &Place, right: &Place) -> bool {
-    let hosts = left.endpoint_hosts();
-    !hosts.is_empty()
-        && right
-            .endpoint_hosts()
-            .iter()
-            .any(|host| hosts.contains(host))
 }
 
 #[cfg(test)]
@@ -922,6 +1088,109 @@ mod tests {
     }
 
     #[test]
+    fn add_session_opens_another_tab_of_the_same_node() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
+        herdr.fingerprint = Some("SHA256:NODE".into());
+        herdr.routes.push(Route::direct("riverwood"));
+        store.places = vec![herdr.clone()];
+        let id = store.add_session(herdr.id, Backend::Tmux, "dev");
+        assert_ne!(id, herdr.id);
+        assert_eq!(store.places.len(), 2);
+        assert_eq!(store.selected_id, Some(id));
+        assert_eq!(store.places[1].id, id);
+        let tab = store.places.iter().find(|place| place.id == id).unwrap();
+        assert_eq!(tab.fingerprint.as_deref(), Some("SHA256:NODE"));
+        assert_eq!(tab.user, "ada");
+        assert_eq!(tab.backend, Backend::Tmux);
+        assert_eq!(tab.session.as_deref(), Some("dev"));
+        assert!(tab.routes.iter().any(|route| route.host == "riverwood"));
+    }
+
+    #[test]
+    fn add_session_reuses_an_existing_tab() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
+        herdr.fingerprint = Some("SHA256:NODE".into());
+        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
+        tmux.fingerprint = Some("SHA256:NODE".into());
+        store.places = vec![herdr.clone(), tmux.clone()];
+        let id = store.add_session(herdr.id, Backend::Tmux, "dev");
+        assert_eq!(id, tmux.id);
+        assert_eq!(store.places.len(), 2);
+        assert_eq!(store.selected_id, Some(tmux.id));
+    }
+
+    #[test]
+    fn add_endpoint_puts_the_route_on_every_tab_of_the_node() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
+        herdr.fingerprint = Some("SHA256:NODE".into());
+        herdr.routes.push(Route::direct("riverwood"));
+        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
+        tmux.fingerprint = Some("SHA256:NODE".into());
+        tmux.routes.push(Route::direct("riverwood"));
+        store.places = vec![herdr, tmux];
+        store.add_endpoint("ada", "riften", "SHA256:NODE", Route::mdns("riften.local"));
+        assert_eq!(store.places.len(), 2);
+        for place in &store.places {
+            assert!(
+                place
+                    .routes
+                    .iter()
+                    .any(|route| route.host == "riften.local" && route.last)
+            );
+        }
+    }
+
+    #[test]
+    fn remember_route_updates_every_tab_of_the_node() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
+        herdr.fingerprint = Some("SHA256:NODE".into());
+        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
+        tmux.fingerprint = Some("SHA256:NODE".into());
+        store.places = vec![herdr.clone(), tmux];
+        store.remember_route(herdr.id, &Route::mdns("riverwood.local"));
+        for place in &store.places {
+            assert!(
+                place
+                    .routes
+                    .iter()
+                    .any(|route| route.host == "riverwood.local" && route.last)
+            );
+        }
+    }
+
+    #[test]
+    fn add_endpoint_adopts_another_session_of_an_unpinned_node() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
+        herdr.fingerprint = Some("SHA256:NODE".into());
+        let stale = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
+        store.places = vec![herdr, stale.clone()];
+        store.add_endpoint(
+            "ada",
+            "riverwood",
+            "SHA256:NODE",
+            Route::direct("riverwood"),
+        );
+        assert_eq!(store.places.len(), 2);
+        let tab = store
+            .places
+            .iter()
+            .find(|place| place.id == stale.id)
+            .unwrap();
+        assert_eq!(tab.fingerprint.as_deref(), Some("SHA256:NODE"));
+        assert_eq!(tab.session.as_deref(), Some("dev"));
+    }
+
+    #[test]
     fn normalize_places_keeps_one_node_per_fingerprint() {
         let mut first = Place::new("ada", "riverwood", Backend::Herdr, None);
         first.fingerprint = Some("SHA256:NODE".into());
@@ -941,26 +1210,49 @@ mod tests {
     }
 
     #[test]
-    fn normalize_places_drops_the_unpinned_copy_of_a_pinned_node() {
+    fn normalize_places_completes_the_unpinned_copy_of_a_pinned_node() {
         let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
         pinned.fingerprint = Some("SHA256:NODE".into());
         let stale = Place::new("ada", "riverwood", Backend::Herdr, None);
-        let normalized = normalize_places(vec![stale, pinned.clone()]);
+        let normalized = normalize_places(vec![stale.clone(), pinned]);
         assert_eq!(normalized.len(), 1);
-        assert_eq!(normalized[0].id, pinned.id);
+        // The tab the user already had stays; it just learns the pin.
+        assert_eq!(normalized[0].id, stale.id);
+        assert_eq!(normalized[0].fingerprint.as_deref(), Some("SHA256:NODE"));
     }
 
     #[test]
-    fn normalize_places_keeps_the_label_and_session_of_the_older_copy() {
-        let mut stale = Place::new("ada", "riverwood", Backend::Herdr, Some("main".into()));
+    fn normalize_places_keeps_the_label_of_the_older_copy() {
+        let mut stale = Place::new("ada", "riverwood", Backend::Tmux, Some("main".into()));
         stale.label = Some("Work".into());
-        let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
+        let mut pinned = Place::new("ada", "riverwood", Backend::Tmux, Some("main".into()));
         pinned.fingerprint = Some("SHA256:NODE".into());
         let normalized = normalize_places(vec![stale, pinned]);
         assert_eq!(normalized.len(), 1);
         assert_eq!(normalized[0].fingerprint.as_deref(), Some("SHA256:NODE"));
         assert_eq!(normalized[0].label.as_deref(), Some("Work"));
         assert_eq!(normalized[0].session.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn normalize_places_keeps_two_sessions_of_one_node_as_two_tabs() {
+        let mut herdr = Place::new("ada", "riverwood", Backend::Herdr, None);
+        herdr.fingerprint = Some("SHA256:NODE".into());
+        herdr.routes.push(Route::direct("riverwood"));
+        let mut tmux = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
+        tmux.fingerprint = Some("SHA256:NODE".into());
+        tmux.routes.push(Route::mdns("riverwood.local"));
+        let normalized = normalize_places(vec![herdr, tmux]);
+        assert_eq!(normalized.len(), 2);
+        // Routes belong to the node, so both tabs see every endpoint.
+        for place in &normalized {
+            assert!(
+                place
+                    .routes
+                    .iter()
+                    .any(|route| route.host == "riverwood.local")
+            );
+        }
     }
 
     #[test]

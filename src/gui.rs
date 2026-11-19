@@ -55,6 +55,14 @@ struct PendingRoute {
     rx: Receiver<Result<Choice, ChooseError>>,
 }
 
+/// "New session": another access to the node a tab already opens.
+#[derive(Clone)]
+struct NewSession {
+    source: Uuid,
+    backend: Backend,
+    session: String,
+}
+
 struct WizardRun {
     key: Option<Uuid>,
     rx: Receiver<WizardMsg>,
@@ -74,6 +82,7 @@ pub struct RtermApp {
     active_routes: HashMap<Uuid, Route>,
     forced_routes: HashMap<Uuid, Route>,
     wizard: Option<WizardRun>,
+    new_session: Option<NewSession>,
     fingerprint_check: Option<Receiver<Result<Choice, ChooseError>>>,
     fingerprint_error: Option<String>,
     sleep: SleepWatch,
@@ -109,6 +118,7 @@ impl RtermApp {
             active_routes: HashMap::new(),
             forced_routes: HashMap::new(),
             wizard: None,
+            new_session: None,
             fingerprint_check: None,
             fingerprint_error: None,
             sleep: SleepWatch::start(),
@@ -550,6 +560,7 @@ impl eframe::App for RtermApp {
                 self.pane(ui);
             });
         self.editor_window(ctx);
+        self.session_window(ctx);
         self.settings_window(ctx);
         self.ensure_font(ctx);
         self.sync_sessions();
@@ -835,6 +846,33 @@ impl RtermApp {
                 self.store.reconnect(place.id);
                 ui.close_menu();
             }
+            ui.menu_button("New session", |ui| {
+                ui.label(
+                    egui::RichText::new("Another access to the same node.")
+                        .small()
+                        .weak(),
+                );
+                if ui.button("Herdr").clicked() {
+                    self.store.add_session(place.id, Backend::Herdr, "");
+                    ui.close_menu();
+                }
+                if ui.button("tmux…").clicked() {
+                    self.new_session = Some(NewSession {
+                        source: place.id,
+                        backend: Backend::Tmux,
+                        session: String::new(),
+                    });
+                    ui.close_menu();
+                }
+                if ui.button("screen…").clicked() {
+                    self.new_session = Some(NewSession {
+                        source: place.id,
+                        backend: Backend::Screen,
+                        session: String::new(),
+                    });
+                    ui.close_menu();
+                }
+            });
             let candidates = route::candidates(&place);
             if !candidates.is_empty() {
                 ui.menu_button("Reconnect as", |ui| {
@@ -1547,6 +1585,75 @@ impl RtermApp {
             self.fingerprint_error = None;
             self.store.editor = None;
         }
+    }
+
+    fn session_window(&mut self, ctx: &egui::Context) {
+        let Some(mut draft) = self.new_session.clone() else {
+            return;
+        };
+        let Some(source) = self
+            .store
+            .places
+            .iter()
+            .find(|place| place.id == draft.source)
+            .map(|place| place.display_label())
+        else {
+            self.new_session = None;
+            return;
+        };
+        let mut open = true;
+        let mut create = false;
+        let mut dismiss = false;
+        sheet(ctx, "new-session", &mut open, |ui| {
+            ui.set_min_width(360.0);
+            ui.label(egui::RichText::new("New session").size(18.0));
+            ui.label(
+                egui::RichText::new(format!(
+                    "Another way into {source}. It shares the fingerprint, user and endpoints."
+                ))
+                .weak(),
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label("Backend");
+                for backend in Backend::ALL {
+                    ui.selectable_value(&mut draft.backend, backend, backend_name(backend));
+                }
+            });
+            if draft.backend != Backend::Herdr {
+                ui.add_space(6.0);
+                ui.label("Session");
+                ui.add(
+                    egui::TextEdit::singleline(&mut draft.session)
+                        .hint_text("session name")
+                        .desired_width(260.0),
+                );
+            }
+            ui.add_space(8.0);
+            let ready = draft.backend == Backend::Herdr || !draft.session.trim().is_empty();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add_enabled(ready, egui::Button::new("Open").fill(ACCENT))
+                    .clicked()
+                {
+                    create = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    dismiss = true;
+                }
+            });
+        });
+        if dismiss {
+            open = false;
+        }
+        if create {
+            let source = draft.source;
+            self.store
+                .add_session(source, draft.backend, draft.session.clone());
+            self.new_session = None;
+            return;
+        }
+        self.new_session = if open { Some(draft) } else { None };
     }
 
     fn settings_window(&mut self, ctx: &egui::Context) {
