@@ -40,11 +40,11 @@ v1 runs on macOS 14 and on Linux. Windows is out of scope. A later release still
 
 A place is:
 
-- user (required when the place is remote)
-- host (empty, a loopback name, or this machine's hostname means local)
+- user (optional; empty means the ssh login)
+- host (the first endpoint; empty, a loopback name, or this machine's hostname means local)
 - backend: `herdr`, `tmux`, or `screen`
 - session name: required for `tmux` and `screen`; absent for `herdr`
-- label: optional
+- label: optional; replaces the hostname part of the tab name
 - fingerprint: optional SSH host key fingerprint (`SHA256:…`)
 - routes: zero or more `kind`, `host`, optional `port` records
 
@@ -52,12 +52,14 @@ herdr has no session name in rterm.
 
 An empty host, a loopback host (`localhost`, `127.0.0.1`, `::1`), or this machine's hostname is a local place. Attach runs the mux on this machine as the login user. Do not use SSH. Persist no host for a loopback name. Keep this machine's hostname in the catalog. If user is empty, use the login name. Default label is `user@localhost:herdr`.
 
-If the user leaves the label empty, the default is:
+The routes are the source of truth for how to reach a node; the endpoint is only the first route. If the user leaves the label empty, the hostname is the route in use (the last one that worked, else the first saved route, else the endpoint), and the default name is:
 
-- remote herdr: `user@host:herdr`
-- remote tmux or screen: `user@host:tmux(foo)` or `user@host:screen(foo)`
+- remote herdr: `user@hostname:herdr`
+- remote tmux or screen: `user@hostname:tmux(foo)` or `user@hostname:screen(foo)`
 - local herdr: `user@localhost:herdr` (user defaults to the Mac login name)
 - local tmux or screen: `user@localhost:tmux(foo)`
+
+A label replaces only the hostname: label `work` on `user@host:herdr` shows `user@work:herdr`.
 
 Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local.
 
@@ -75,7 +77,7 @@ A route is `kind`, `host`, and an optional `port`.
 | `mdns` | `<short>.local` through the system mDNS resolver |
 | `tailscale` | a MagicDNS name or IP from `tailscale status --json` |
 
-Try routes in this order, dropping duplicates: routes saved in the catalog, the place host, `mdns`, then Tailscale peers whose `HostName`, `DNSName` first label, `DNSName`, or IP matches the place host. Ask the Tailscale daemon through the `tailscale` binary. A missing binary or stopped daemon only removes Tailscale routes.
+Try routes in this order, dropping duplicates: the route marked last, routes saved in the catalog (the endpoint is one of them), then mDNS and Tailscale peers discovered from the hostname. Ask the Tailscale daemon through the `tailscale` binary. A missing binary or stopped daemon only removes Tailscale routes.
 
 The connection assistant probes each route before attaching:
 

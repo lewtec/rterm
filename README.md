@@ -41,7 +41,7 @@ last = true
 ```
 
 - Empty host, `localhost`, or `127.0.0.1` is this machine. No SSH. Label: `you@localhost:herdr`.
-- A real host uses `/usr/bin/ssh`. Label: `user@host:herdr` or `user@host:tmux(foo)`.
+- A real host uses `/usr/bin/ssh`. Label: `user@hostname:herdr` or `user@hostname:tmux(foo)`. The hostname is the route in use; a label replaces it, so label `work` shows `user@work:herdr`.
 
 herdr attach uses the binary that owns `herdr.sock` on that machine. PATH `herdr` can be a different version.
 

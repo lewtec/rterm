@@ -107,11 +107,47 @@ impl Place {
         }
     }
 
-    pub fn display_label(&self) -> String {
-        if let Some(label) = self.label.as_ref().filter(|label| !label.is_empty()) {
-            return label.clone();
+    /// The name shown for the node: the label when the user set one, else the
+    /// hostname of the route in use. The endpoint is only one route, so it is
+    /// not the tab's name.
+    pub fn hostname(&self) -> String {
+        if let Some(label) = self
+            .label
+            .as_deref()
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+        {
+            return label.to_string();
         }
-        self.switch_key()
+        if self.is_local() {
+            return "localhost".to_string();
+        }
+        let host = self
+            .routes
+            .iter()
+            .find(|route| route.last)
+            .or_else(|| {
+                self.routes
+                    .iter()
+                    .find(|route| !route.host.trim().is_empty())
+            })
+            .map(|route| route.host.trim())
+            .filter(|host| !host.is_empty())
+            .unwrap_or_else(|| self.host.trim());
+        let (_, host) = Self::split_endpoint(host);
+        host.trim().trim_end_matches('.').to_string()
+    }
+
+    pub fn display_label(&self) -> String {
+        let name = self.hostname();
+        let core = format!("{}@{name}", self.login_key());
+        match self.backend {
+            Backend::Herdr => format!("{core}:herdr"),
+            Backend::Tmux => format!("{core}:tmux({})", self.session.as_deref().unwrap_or("")),
+            Backend::Screen => {
+                format!("{core}:screen({})", self.session.as_deref().unwrap_or(""))
+            }
+        }
     }
 
     /// Every address that reaches this place, normalized.
@@ -195,7 +231,7 @@ impl Place {
             if resolved_user.is_empty() {
                 resolved_user = login_name();
             }
-        } else if resolved_user.is_empty() || resolved_host.is_empty() {
+        } else if resolved_host.is_empty() {
             return None;
         }
         Some(Place {
@@ -325,3 +361,47 @@ pub fn file_name(index: usize, place: &Place) -> String {
 }
 
 pub const FILE_EXTENSION: &str = "rterm-place";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::route::Route;
+
+    #[test]
+    fn hostname_is_the_route_in_use_not_the_endpoint() {
+        let mut place = Place::new("ada", "shellhub", Backend::Herdr, None);
+        place.routes = vec![
+            Route::direct("shellhub"),
+            Route {
+                last: true,
+                ..Route::mdns("riverwood.local")
+            },
+        ];
+        assert_eq!(place.hostname(), "riverwood.local");
+        assert_eq!(place.display_label(), "ada@riverwood.local:herdr");
+    }
+
+    #[test]
+    fn hostname_falls_back_to_the_endpoint() {
+        let place = Place::new("ada", "riverwood", Backend::Tmux, Some("dev".into()));
+        assert_eq!(place.hostname(), "riverwood");
+        assert_eq!(place.display_label(), "ada@riverwood:tmux(dev)");
+    }
+
+    #[test]
+    fn label_replaces_only_the_hostname() {
+        let mut place = Place::new("ada", "riverwood", Backend::Herdr, None);
+        place.label = Some("work".into());
+        assert_eq!(place.display_label(), "ada@work:herdr");
+        assert_eq!(place.switch_key(), "ada@riverwood:herdr");
+    }
+
+    #[test]
+    fn an_empty_login_shows_the_ssh_login() {
+        let place = Place::new("", "riverwood", Backend::Herdr, None);
+        assert_eq!(
+            place.display_label(),
+            format!("{}@riverwood:herdr", login_name())
+        );
+    }
+}

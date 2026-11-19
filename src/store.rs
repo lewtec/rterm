@@ -208,6 +208,8 @@ impl AppStore {
                 // Another access (tmux dev, screen ops): another tab of the node.
                 self.adopt_unpinned(&fingerprint, target, &probe);
                 self.remember_on_node(&fingerprint, route);
+                // The endpoint the user typed is a route too.
+                self.add_route_on_node(&fingerprint, Route::direct(address.clone()));
                 self.persist();
                 let chosen = self.add_tab_of(&fingerprint, target);
                 self.select(chosen);
@@ -225,6 +227,8 @@ impl AppStore {
             }
         }
         crate::route::remember(&mut routes, route);
+        // The typed endpoint is a route too, so the route list is the truth.
+        crate::route::push_unique(&mut routes, Route::direct(address.clone()));
         let place = Place {
             id: Uuid::new_v4(),
             user,
@@ -339,6 +343,18 @@ impl AppStore {
             .filter(|place| place.fingerprint.as_deref() == Some(fingerprint))
         {
             crate::route::remember(&mut place.routes, route.clone());
+        }
+    }
+
+    /// Add a route that is not the one in use (the typed endpoint) to every tab
+    /// of the node, without changing which route is last.
+    fn add_route_on_node(&mut self, fingerprint: &str, route: Route) {
+        for place in self
+            .places
+            .iter_mut()
+            .filter(|place| place.fingerprint.as_deref() == Some(fingerprint))
+        {
+            crate::route::push_unique(&mut place.routes, route.clone());
         }
     }
 
@@ -486,6 +502,9 @@ impl AppStore {
                     crate::route::push_unique(&mut routes, route);
                 }
             }
+            // The endpoint is just a route; keep it in the list so the list is
+            // the whole truth.
+            crate::route::push_unique(&mut routes, Route::direct(draft.host.clone()));
         }
         let fingerprint = if local {
             None
@@ -928,11 +947,15 @@ fn same_node(left: &Place, right: &Place) -> bool {
         (Some(left_pin), Some(right_pin)) => {
             left_pin == right_pin && left.login_key() == right.login_key()
         }
-        // Without a pin the only identity is the endpoint the user typed.
+        // Without a pin, the endpoints are all there is: overlapping routes
+        // mean the same node, whatever name the user typed.
         _ => {
-            left.host.eq_ignore_ascii_case(&right.host)
-                && left.login_key() == right.login_key()
+            let left_hosts = left.endpoint_hosts();
+            let right_hosts = right.endpoint_hosts();
+            left.login_key() == right.login_key()
                 && left.is_local() == right.is_local()
+                && (left_hosts.is_empty() && right_hosts.is_empty()
+                    || left_hosts.iter().any(|host| right_hosts.contains(host)))
         }
     }
 }
@@ -1074,9 +1097,13 @@ mod tests {
         let place = store.places.iter().find(|place| place.id == id).unwrap();
         assert_eq!(place.host, "riverwood");
         assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
-        assert_eq!(place.routes.len(), 1);
+        // The probed route, marked last, and the typed endpoint as another route.
+        assert_eq!(place.routes.len(), 2);
         assert!(place.routes[0].last);
         assert_eq!(place.routes[0].host, "riverwood.local");
+        assert!(place.routes.iter().any(
+            |route| route.host == "riverwood" && route.kind == crate::route::RouteKind::Direct
+        ));
     }
 
     #[test]
@@ -1508,7 +1535,10 @@ mod tests {
         }
         store.save_editor();
         let saved = store.places.last().unwrap().clone();
-        assert_eq!(saved.routes, vec![Route::mdns("riverwood.local")]);
+        assert_eq!(
+            saved.routes,
+            vec![Route::mdns("riverwood.local"), Route::direct("riverwood"),]
+        );
         assert_eq!(
             saved.fingerprint.as_deref(),
             Some("SHA256:C8olMcLxERkizT4dlzO1z85UVxdq")

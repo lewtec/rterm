@@ -345,10 +345,18 @@ impl PartialPlace {
             .ok_or_else(|| CatalogError::MissingField("backend".into(), line))?;
         let mut host = self.host.unwrap_or_default().trim().to_string();
         let user = self.user.unwrap_or_default().trim().to_string();
+        // Routes are the truth. A file that only lists routes still names the
+        // node, and the first route stands in for the missing endpoint.
+        let routes = self.routes;
+        if host.is_empty() {
+            host = routes
+                .iter()
+                .find(|route| !route.host.trim().is_empty())
+                .map(|route| route.host.trim().to_string())
+                .unwrap_or_default();
+        }
         if Place::is_loopback_host(&host) {
             host.clear();
-        } else if user.is_empty() {
-            return Err(CatalogError::MissingField("user".into(), line));
         }
         let session = self.session.map(|value| value.trim().to_string());
         if backend != Backend::Herdr && session.as_ref().is_none_or(|value| value.is_empty()) {
@@ -374,7 +382,7 @@ impl PartialPlace {
                 session
             },
             label,
-            routes: if local { Vec::new() } else { self.routes },
+            routes: if local { Vec::new() } else { routes },
             fingerprint: if local { None } else { fingerprint },
         })
     }
@@ -580,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_place_still_requires_user() {
+    fn remote_place_without_user_uses_the_ssh_login() {
         let text = swift(
             r#"
         version = 1
@@ -591,10 +599,40 @@ mod tests {
         backend = "herdr"
         "#,
         );
+        let decoded = decode(&text).unwrap();
+        assert_eq!(decoded.places[0].user, "");
+        assert_eq!(decoded.places[0].host, "riverwood");
         assert_eq!(
-            decode(&text).unwrap_err(),
-            CatalogError::MissingField("user".into(), 3)
+            Place::parse_switch_key("riverwood:herdr")
+                .unwrap()
+                .switch_key(),
+            decoded.places[0].switch_key()
         );
+    }
+
+    #[test]
+    fn routes_alone_name_the_place() {
+        let text = swift(
+            r#"
+        version = 2
+
+        [[place]]
+        id = "11111111-1111-1111-1111-111111111111"
+        backend = "herdr"
+
+        [[place.route]]
+        kind = "direct"
+        host = "riverwood"
+
+        [[place.route]]
+        kind = "mdns"
+        host = "riverwood.local"
+        last = true
+        "#,
+        );
+        let decoded = decode(&text).unwrap();
+        assert_eq!(decoded.places[0].host, "riverwood");
+        assert_eq!(decoded.places[0].routes.len(), 2);
     }
 
     #[test]

@@ -1976,7 +1976,12 @@ fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState) {
             if editor.backend != Backend::Herdr {
                 place_field(ui, "Session", &mut editor.session, "session name");
             }
-            place_field(ui, "Label", &mut editor.label, "optional, shown on the tab");
+            place_field(
+                ui,
+                "Label",
+                &mut editor.label,
+                "optional; defaults to the hostname",
+            );
             ui.label("Fingerprint");
             ui.add(
                 egui::TextEdit::singleline(&mut editor.fingerprint)
