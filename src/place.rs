@@ -113,6 +113,20 @@ impl Place {
         !address.is_empty() && self.endpoint_hosts().iter().any(|host| host == &address)
     }
 
+    /// `user@endpoint` names the login and the address in one field. Returns the
+    /// login only when the text carries one; the address never keeps it.
+    pub fn split_endpoint(address: &str) -> (Option<String>, String) {
+        let address = address.trim();
+        if let Some((user, host)) = address.rsplit_once('@') {
+            let user = user.trim();
+            let host = host.trim();
+            if !user.is_empty() && !host.is_empty() && !user.contains('@') {
+                return (Some(user.to_string()), host.to_string());
+            }
+        }
+        (None, address.to_string())
+    }
+
     pub fn matches_switch_key(&self, key: &str) -> bool {
         let needle = key.trim();
         if needle.is_empty() {
