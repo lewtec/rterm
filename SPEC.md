@@ -97,6 +97,8 @@ Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the sam
 
 Add Place asks only for **user** and an **endpoint**. The SSH host key fingerprint is the node identity. rterm probes the endpoint once, reads its host key, and adds the endpoint to the place that already owns that fingerprint; when no place owns it, rterm creates one with that fingerprint and the endpoint. The endpoint is never a match key, so the same node reached through another address joins the existing place. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
 
+The list holds one tab per node. A verified endpoint that reaches a place without a pin completes that place with the fingerprint instead of adding a second tab, and keeps its label and session. Loading folds duplicates the same way: by fingerprint first, then an unpinned place into the pinned node it reaches, then unpinned copies by switch key.
+
 A place that already has its pin is never asked to confirm it again. A route that presents another key is another node and is never attached.
 
 Places loaded from a v1 `places.toml` join the same in-memory model with no routes and no pin; `host` is still tried as the direct route. Loading does not rewrite or delete the v1 file. Migrating v1 on disk is pending an explicit decision.
@@ -238,7 +240,7 @@ host = "whiterun.tailnet.ts.net"
 last = true
 ```
 
-Version 1 files have no routes or fingerprint. They decode with no routes and no pin; `host` is still tried as the direct route. Write version 2 on the next save.
+Version 1 files have no routes or fingerprint. They decode with no routes and no pin; `host` is still tried as the direct route. Such a place adopts the fingerprint once a verified endpoint reaches it, so it never has to be added twice. Write version 2 on the next save.
 
 Do not use `~/.config`. Do not use `UserDefaults` as the store.
 
