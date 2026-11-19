@@ -97,6 +97,14 @@ pub fn last_route(place: &Place) -> Option<&Route> {
     place.routes.iter().find(|route| route.last)
 }
 
+/// The endpoint the place is using: the one marked last, or the first one the
+/// attach would try when nothing worked yet.
+pub fn current(place: &Place) -> Option<Route> {
+    last_route(place)
+        .cloned()
+        .or_else(|| candidates(place).into_iter().next())
+}
+
 /// Mark `route` as the last one that worked and drop the mark from the rest.
 /// The route is added to the catalog the first time it is used.
 pub fn remember(routes: &mut Vec<Route>, route: Route) {
@@ -347,6 +355,22 @@ mod tests {
         let routes = candidates(&place);
         assert_eq!(routes[0].host, "riverwood.local");
         assert_eq!(routes[1].host, "100.64.0.7");
+    }
+
+    #[test]
+    fn current_is_the_last_route_or_the_first_candidate() {
+        let mut place = place("riverwood");
+        assert_eq!(current(&place), Some(Route::direct("riverwood")));
+        place.routes = vec![
+            Route::direct("100.64.0.7"),
+            Route {
+                last: true,
+                ..Route::mdns("riverwood.local")
+            },
+        ];
+        let in_use = current(&place).unwrap();
+        assert_eq!(in_use.host, "riverwood.local");
+        assert!(in_use.last);
     }
 
     #[test]

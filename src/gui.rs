@@ -835,6 +835,28 @@ impl RtermApp {
                 self.store.reconnect(place.id);
                 ui.close_menu();
             }
+            let candidates = route::candidates(&place);
+            if !candidates.is_empty() {
+                ui.menu_button("Reconnect as", |ui| {
+                    let in_use = self.in_use_route(&place);
+                    for route in candidates {
+                        let current = in_use
+                            .as_ref()
+                            .is_some_and(|current| route::same_route(current, &route));
+                        let label = format!(
+                            "{} {} ({})",
+                            if current { "✓" } else { "  " },
+                            route.display(),
+                            route.kind.label()
+                        );
+                        if ui.selectable_label(current, label).clicked() {
+                            self.forced_routes.insert(place.id, route.clone());
+                            self.store.reconnect(place.id);
+                            ui.close_menu();
+                        }
+                    }
+                });
+            }
             if ui.button("Edit").clicked() {
                 self.settings_open = false;
                 self.wizard = None;
@@ -846,6 +868,15 @@ impl RtermApp {
                 ui.close_menu();
             }
         });
+    }
+
+    /// The endpoint this place is attached through, or the one the next attach
+    /// would try: the session's real route wins over the saved last route.
+    fn in_use_route(&self, place: &Place) -> Option<Route> {
+        self.active_routes
+            .get(&place.id)
+            .cloned()
+            .or_else(|| route::current(place))
     }
 
     fn banner(&mut self, ui: &mut egui::Ui, message: &str) {
@@ -939,6 +970,7 @@ impl RtermApp {
     /// the same one the attach walks, so what you pick is what gets probed.
     fn route_picker(&mut self, ui: &mut egui::Ui, rect: egui::Rect, place: &Place, message: &str) {
         let routes = route::candidates(place);
+        let in_use = self.in_use_route(place);
         ui.painter()
             .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(190));
         let width = (rect.width() - 64.0).clamp(260.0, 560.0);
@@ -962,7 +994,14 @@ impl RtermApp {
                     for route in &routes {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(route.kind.label()).small().weak());
-                            ui.monospace(route.display());
+                            let current = in_use
+                                .as_ref()
+                                .is_some_and(|current| route::same_route(current, route));
+                            ui.monospace(format!(
+                                "{}{}",
+                                if current { "✓ " } else { "" },
+                                route.display()
+                            ));
                             if route.last {
                                 ui.label(
                                     egui::RichText::new("last used")
@@ -1012,6 +1051,16 @@ impl RtermApp {
             self.wheel_remainder = 0.0;
             return;
         };
+        // A sheet or menu above the pane owns the pointer. Raw input still says
+        // "pressed" over the pane, so without this check a drag on Settings
+        // becomes a click in the terminal behind it.
+        if let Some(over) = ui.ctx().layer_id_at(pos)
+            && over != ui.layer_id()
+        {
+            self.wheel_remainder = 0.0;
+            self.last_cell = None;
+            return;
+        }
         let col = ((pos.x - rect.min.x) / char_w).floor().max(0.0) as u16;
         let row = ((pos.y - rect.min.y) / char_h).floor().max(0.0) as u16;
         let pressed = ui.input(|input| input.pointer.primary_pressed());
