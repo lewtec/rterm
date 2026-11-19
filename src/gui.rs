@@ -1120,7 +1120,7 @@ impl RtermApp {
     }
 
     fn start_fingerprint_check(&mut self) {
-        let Some(editor) = self.store.editor.clone() else {
+        let Some(editor) = self.split_editor_endpoint() else {
             return;
         };
         let Some(place) = editor_draft(&editor) else {
@@ -1184,10 +1184,23 @@ impl RtermApp {
     }
 
     fn start_wizard(&mut self) {
-        let Some(editor) = self.store.editor.clone() else {
+        let Some(editor) = self.split_editor_endpoint() else {
             return;
         };
         self.start_wizard_for(&editor);
+    }
+
+    /// `user@endpoint` is split as soon as it is used, so the form shows the
+    /// login and the address apart and nothing downstream sees the doubled value.
+    fn split_editor_endpoint(&mut self) -> Option<PlaceEditorState> {
+        let mut editor = self.store.editor.clone()?;
+        let (user, host) = Place::split_endpoint(&editor.host);
+        if let Some(user) = user {
+            editor.user = user;
+            editor.host = host;
+            self.store.editor = Some(editor.clone());
+        }
+        Some(editor)
     }
 
     fn start_wizard_for(&mut self, editor: &PlaceEditorState) {
@@ -1454,7 +1467,7 @@ impl RtermApp {
             ui.label(egui::RichText::new("Add Place").size(18.0));
             ui.label(
                 egui::RichText::new(
-                    "Who logs in, and one way to reach it. The SSH host key identifies the node; this address is just the first endpoint.",
+                    "Who logs in, and one way to reach it. The SSH host key identifies the node; this address is just the first endpoint. Leave the user empty to use your login.",
                 )
                 .weak(),
             );
@@ -1470,7 +1483,7 @@ impl RtermApp {
                             ui,
                             "Endpoint",
                             &mut editor.host,
-                            "hostname, IP or SSH alias; empty is this machine",
+                            "hostname, IP, SSH alias or user@host; empty is this machine",
                         );
                     });
             });
@@ -1740,7 +1753,7 @@ fn user_hint(editor: &PlaceEditorState) -> &'static str {
     if Place::is_loopback_host(&editor.host) {
         "defaults to you"
     } else {
-        "required"
+        "empty uses your login"
     }
 }
 
@@ -1776,7 +1789,7 @@ fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState) {
                 ui,
                 "Endpoint",
                 &mut editor.host,
-                "hostname, IP or SSH alias; empty is this machine",
+                "hostname, IP, SSH alias or user@host; empty is this machine",
             );
             ui.label("Backend");
             ui.horizontal(|ui| {
@@ -1926,11 +1939,6 @@ fn details_issue(editor: &PlaceEditorState) -> Option<&'static str> {
 }
 
 fn save_issue(editor: &PlaceEditorState) -> Option<&'static str> {
-    let user = editor.user.trim();
-    let host = editor.host.trim();
-    if !Place::is_loopback_host(host) && user.is_empty() {
-        return Some("A remote endpoint needs a user.");
-    }
     details_issue(editor)
 }
 
@@ -2804,7 +2812,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn editor_requires_a_remote_user_and_a_session() {
+    fn editor_needs_a_session_but_the_login_is_optional() {
         let mut editor = PlaceEditorState {
             origin_id: None,
             user: String::new(),
@@ -2815,14 +2823,34 @@ mod tests {
             routes: Vec::new(),
             fingerprint: String::new(),
         };
-        assert_eq!(save_issue(&editor), Some("A remote endpoint needs a user."));
-        editor.user = "ada".into();
         assert_eq!(save_issue(&editor), Some("tmux needs a session name."));
         editor.session = "dev".into();
         assert!(can_save(&editor));
         editor.host.clear();
-        editor.user.clear();
         editor.backend = Backend::Herdr;
         assert!(can_save(&editor));
+    }
+
+    #[test]
+    fn endpoint_with_a_login_splits_into_user_and_host() {
+        let mut editor = PlaceEditorState {
+            origin_id: None,
+            user: String::new(),
+            host: "lucao.whiterun@cloud.shellhub.io".into(),
+            backend: Backend::Herdr,
+            session: String::new(),
+            label: String::new(),
+            routes: Vec::new(),
+            fingerprint: String::new(),
+        };
+        let (user, host) = Place::split_endpoint(&editor.host);
+        assert_eq!(user.as_deref(), Some("lucao.whiterun"));
+        assert_eq!(host, "cloud.shellhub.io");
+        editor.host = host;
+        editor.user = user.unwrap_or_default();
+        assert_eq!(
+            rterm::driver::ssh_target(&editor_draft(&editor).unwrap()),
+            "lucao.whiterun@cloud.shellhub.io"
+        );
     }
 }

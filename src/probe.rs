@@ -282,7 +282,7 @@ pub fn probe_arguments(place: &Place, route: &Route, known_hosts: &Path) -> Vec<
         "-o".into(),
         format!("HostKeyAlias={alias}"),
     ];
-    arguments.extend(driver::route_options(route));
+    arguments.extend(driver::route_options(place, route));
     arguments.push(driver::ssh_target(place));
     arguments.push("true".into());
     arguments

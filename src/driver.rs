@@ -88,8 +88,15 @@ pub fn known_hosts_path(place: &Place) -> PathBuf {
     caches_directory().join(format!("hostkeys-{}", uuid_upper(place.id)))
 }
 
-pub fn route_options(route: &Route) -> Vec<String> {
-    let mut options = vec!["-o".into(), format!("HostName={}", route.host)];
+/// Point ssh at this route's address. When the route is the place's own
+/// endpoint, the destination already names it and forcing `HostName` would
+/// defeat an SSH config alias (`Host shellhub` / `HostName cloud.shellhub.io`).
+pub fn route_options(place: &Place, route: &Route) -> Vec<String> {
+    let mut options = Vec::new();
+    if !route.host.eq_ignore_ascii_case(place.host.trim()) {
+        options.push("-o".into());
+        options.push(format!("HostName={}", route.host));
+    }
     if let Some(port) = route.port
         && port != 22
     {
@@ -137,7 +144,7 @@ pub fn upload_arguments(place: &Place, route: Option<&Route>, remote_path: &str)
     ];
     if let Some(route) = route {
         arguments.extend(identity_options(place));
-        arguments.extend(route_options(route));
+        arguments.extend(route_options(place, route));
     }
     arguments.push(ssh_target(place));
     arguments.push(format!("cat > {}", shell_single_quote(remote_path)));
@@ -192,7 +199,7 @@ pub fn ssh_arguments(
     arguments.extend(control_master_options(place));
     if let Some(route) = route {
         arguments.extend(identity_options(place));
-        arguments.extend(route_options(route));
+        arguments.extend(route_options(place, route));
     }
     arguments.push(ssh_target(place));
     arguments.push(wrapped);
@@ -396,6 +403,30 @@ mod tests {
             arguments.iter().rev().nth(1).map(String::as_str),
             Some("ada@whiterun")
         );
+    }
+
+    #[test]
+    fn an_ssh_alias_route_keeps_its_config_host_name() {
+        let place = Place::new("", "shellhub", Backend::Herdr, None);
+        let route = Route::direct("shellhub");
+        let arguments = ssh_arguments(&place, Some(&route), None);
+        assert!(
+            !arguments
+                .iter()
+                .any(|argument| argument.starts_with("HostName="))
+        );
+        assert_eq!(
+            arguments.iter().rev().nth(1).map(String::as_str),
+            Some("shellhub")
+        );
+    }
+
+    #[test]
+    fn another_route_still_overrides_the_host_name() {
+        let place = Place::new("", "shellhub", Backend::Herdr, None);
+        let route = Route::mdns("shellhub.local");
+        let arguments = ssh_arguments(&place, Some(&route), None);
+        assert!(arguments.contains(&"HostName=shellhub.local".to_string()));
     }
 
     #[test]
