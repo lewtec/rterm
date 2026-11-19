@@ -469,13 +469,6 @@ impl AppStore {
         // and the login that goes in front is the user field.
         draft.host = draft.host.trim().to_string();
         draft.user = draft.user.trim().to_string();
-        let local = Place::is_local_host(&draft.host);
-        if local {
-            draft.host.clear();
-            if draft.user.is_empty() {
-                draft.user = login_name();
-            }
-        }
         if draft.backend == Backend::Herdr {
             draft.session.clear();
         } else if draft.session.trim().is_empty() {
@@ -487,32 +480,32 @@ impl AppStore {
             Some(draft.session.trim().to_string())
         };
         let label = draft.label.trim().to_string();
-        // The list is the whole truth: the endpoint the user typed is the first
-        // route. Editing the endpoint replaces the mark of the route in use;
-        // keeping it keeps whatever route worked last.
-        let previous_endpoint = draft
-            .origin_id
-            .and_then(|id| self.places.iter().find(|place| place.id == id))
-            .map(Place::endpoint_host)
-            .unwrap_or_default();
-        let endpoint_changed = !local
-            && !previous_endpoint.is_empty()
-            && !draft.host.eq_ignore_ascii_case(&previous_endpoint);
+        // The route list is the whole truth. Add Place still types a single
+        // endpoint, which becomes the first route; Edit writes the list the
+        // form shows, with the radio's `last` mark unchanged.
         let mut routes = Vec::new();
-        if !local {
+        if draft.origin_id.is_some() {
+            for route in draft.routes {
+                let route = route.normalized();
+                if !route.host.is_empty() {
+                    crate::route::push_unique(&mut routes, route);
+                }
+            }
+        } else if !Place::is_local_host(&draft.host) {
             crate::route::push_unique(&mut routes, Route::direct(draft.host.clone()));
             for route in draft.routes {
                 let route = route.normalized();
                 crate::route::merge(&mut routes, [route]);
             }
-            if endpoint_changed || !routes.iter().any(|route| route.last) {
-                for route in &mut routes {
-                    route.last = false;
-                }
-                if let Some(endpoint) = routes.first_mut() {
-                    endpoint.last = true;
-                }
+            if !routes.iter().any(|route| route.last)
+                && let Some(endpoint) = routes.first_mut()
+            {
+                endpoint.last = true;
             }
+        }
+        let local = routes.is_empty();
+        if local && draft.user.is_empty() {
+            draft.user = login_name();
         }
         let fingerprint = if local {
             None
@@ -1564,6 +1557,49 @@ mod tests {
             .unwrap();
         assert_eq!(place.routes, saved.routes);
         assert_eq!(place.fingerprint, saved.fingerprint);
+    }
+
+    #[test]
+    fn save_editor_writes_the_route_list_and_keeps_the_radio_choice() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        store.begin_add();
+        {
+            let editor = store.editor.as_mut().unwrap();
+            editor.user = "ada".into();
+            editor.host = "riverwood".into();
+        }
+        store.save_editor();
+        let place = store.places.last().unwrap().clone();
+        store.begin_edit(&place);
+        {
+            let editor = store.editor.as_mut().unwrap();
+            // The host no longer exists in the form; the list is the truth.
+            editor.host = "stale.example".into();
+            editor.routes = vec![
+                Route::direct("riften"),
+                Route {
+                    last: true,
+                    ..Route::mdns("riften.local")
+                },
+            ];
+        }
+        store.save_editor();
+        let saved = store
+            .places
+            .iter()
+            .find(|item| item.id == place.id)
+            .unwrap();
+        assert_eq!(saved.endpoint_host(), "riften");
+        assert_eq!(saved.routes[0], Route::direct("riften"));
+        assert!(saved.routes[1].last);
+        assert!(!saved.routes[0].last);
+        assert!(
+            !saved
+                .routes
+                .iter()
+                .any(|route| route.host == "stale.example")
+        );
     }
 
     #[test]

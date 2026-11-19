@@ -1397,7 +1397,7 @@ impl RtermApp {
             .as_ref()
             .map(|run| run.results.clone())
             .unwrap_or_default();
-        let remote = !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
+        let remote = !Place::is_local_host(&editor_endpoint(&editor));
         sheet(ctx, "place-editor", &mut open, |ui| {
             ui.set_min_width(460.0);
             ui.label(egui::RichText::new(title).size(18.0));
@@ -1436,20 +1436,21 @@ impl RtermApp {
             });
             ui.label(
                 egui::RichText::new(
-                    "The last one that worked is tried first. Empty means discover direct, mDNS and Tailscale.",
+                    "The first route is the endpoint. The radio picks the route in use; the others are fallbacks.",
                 )
                 .small()
                 .weak(),
             );
-            if remote {
-                routes_list(ui, &mut editor.routes);
-                discovery_list(ui, &found);
-            } else {
+            if editor.routes.is_empty() {
                 ui.label(
-                    egui::RichText::new("This machine has no remote routes.")
+                    egui::RichText::new("No routes: this machine.")
                         .small()
                         .weak(),
                 );
+            }
+            routes_list(ui, &mut editor.routes);
+            if remote {
+                discovery_list(ui, &found);
             }
             ui.add_space(6.0);
             ui.add(
@@ -1731,6 +1732,7 @@ impl RtermApp {
         let mut row_rects: Vec<(Uuid, egui::Rect)> = Vec::new();
         let mut reorder = None;
         let mut select_place = None;
+        let mut edit_place = None;
         let mut remove_place = None;
         let mut add_place = false;
         sheet(ctx, "settings", &mut open, |ui| {
@@ -1816,7 +1818,7 @@ impl RtermApp {
                                 ui.label(egui::RichText::new("No places yet.").weak());
                             }
                             for (index, place) in places.iter().enumerate() {
-                                let (body, delete) = place_row(
+                                let (body, edit, delete) = place_row(
                                     ui,
                                     index,
                                     place,
@@ -1826,6 +1828,8 @@ impl RtermApp {
                                 row_rects.push((place.id, body.rect));
                                 if delete.clicked() {
                                     remove_place = Some(place.id);
+                                } else if edit.clicked() {
+                                    edit_place = Some(place.id);
                                 } else if body.clicked() {
                                     select_place = Some(place.id);
                                 } else if body.drag_started() {
@@ -1861,6 +1865,18 @@ impl RtermApp {
         }
         if let Some(id) = remove_place {
             self.store.delete(id);
+        }
+        if let Some(id) = edit_place
+            && let Some(place) = self
+                .store
+                .places
+                .iter()
+                .find(|place| place.id == id)
+                .cloned()
+        {
+            self.wizard = None;
+            self.store.begin_edit(&place);
+            open = false;
         }
         if add_place {
             self.start_add();
@@ -1919,8 +1935,26 @@ fn user_hint(editor: &PlaceEditorState) -> &'static str {
     }
 }
 
+/// The endpoint being edited: the first route, or the typed address while
+/// adding. An edited place with no routes is local.
+fn editor_endpoint(editor: &PlaceEditorState) -> String {
+    editor
+        .routes
+        .iter()
+        .map(|route| route.host.trim())
+        .find(|host| !host.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            if editor.origin_id.is_none() {
+                editor.host.trim().to_string()
+            } else {
+                String::new()
+            }
+        })
+}
+
 fn is_remote(editor: &PlaceEditorState) -> bool {
-    !Place::is_local_host(editor.host.trim())
+    !Place::is_local_host(&editor_endpoint(editor))
 }
 
 fn backend_name(backend: Backend) -> &'static str {
@@ -1946,12 +1980,6 @@ fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState) {
         .show(ui, |ui| {
             let hint = user_hint(editor);
             place_field(ui, "User", &mut editor.user, hint);
-            place_field(
-                ui,
-                "Endpoint",
-                &mut editor.host,
-                "hostname, IP, SSH alias, or SSH address (may contain @); empty is this machine",
-            );
             ui.label("Backend");
             ui.horizontal(|ui| {
                 for backend in Backend::ALL {
@@ -1983,8 +2011,16 @@ fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState) {
 
 fn routes_list(ui: &mut egui::Ui, routes: &mut Vec<Route>) {
     let mut remove = None;
+    let mut in_use = None;
     for (index, route) in routes.iter_mut().enumerate() {
         ui.horizontal(|ui| {
+            if ui
+                .radio(route.last, "")
+                .on_hover_text("Use this route")
+                .clicked()
+            {
+                in_use = Some(index);
+            }
             egui::ComboBox::from_id_salt(("route-kind", index))
                 .selected_text(route.kind.label())
                 .width(92.0)
@@ -2000,17 +2036,18 @@ fn routes_list(ui: &mut egui::Ui, routes: &mut Vec<Route>) {
                     .font(egui::TextStyle::Monospace)
                     .id(egui::Id::new(("route-host", index))),
             );
+            if index == 0 {
+                ui.label(egui::RichText::new("endpoint").small().weak());
+            }
             if ui.button("×").on_hover_text("Remove route").clicked() {
                 remove = Some(index);
             }
-            if route.last {
-                ui.label(
-                    egui::RichText::new("last used")
-                        .small()
-                        .color(egui::Color32::from_rgb(110, 200, 120)),
-                );
-            }
         });
+    }
+    if let Some(index) = in_use {
+        for (position, route) in routes.iter_mut().enumerate() {
+            route.last = position == index;
+        }
     }
     if let Some(index) = remove {
         routes.remove(index);
@@ -2032,7 +2069,8 @@ fn discovery_list(ui: &mut egui::Ui, found: &[Discovered]) {
 }
 
 fn editor_draft(editor: &PlaceEditorState) -> Option<Place> {
-    let host = editor.host.trim();
+    let endpoint = editor_endpoint(editor);
+    let host = endpoint.trim();
     let user = editor.user.trim();
     if host.is_empty() || Place::is_local_host(host) {
         return None;
@@ -2203,7 +2241,7 @@ fn place_row(
     place: &Place,
     selected: bool,
     dragging: bool,
-) -> (egui::Response, egui::Response) {
+) -> (egui::Response, egui::Response, egui::Response) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), SETTINGS_ROW_HEIGHT),
         egui::Sense::hover(),
@@ -2212,6 +2250,15 @@ fn place_row(
         rect,
         ui.id().with(("place-row", place.id)),
         pointer_sense(true),
+    );
+    let edit_rect = egui::Rect::from_center_size(
+        rect.right_center() - egui::vec2(40.0, 0.0),
+        egui::vec2(20.0, 20.0),
+    );
+    let edit = ui.interact(
+        edit_rect,
+        ui.id().with(("place-edit", place.id)),
+        egui::Sense::click(),
     );
     let delete_rect = egui::Rect::from_center_size(
         rect.right_center() - egui::vec2(14.0, 0.0),
@@ -2234,9 +2281,11 @@ fn place_row(
     if fill != egui::Color32::TRANSPARENT {
         ui.painter().rect_filled(rect, 8.0, fill);
     }
-    if delete.hovered() {
-        ui.painter()
-            .rect_filled(delete_rect, 6.0, ui.visuals().widgets.hovered.bg_fill);
+    for (response, button_rect) in [(&edit, edit_rect), (&delete, delete_rect)] {
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(button_rect, 6.0, ui.visuals().widgets.hovered.bg_fill);
+        }
     }
     let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
     paint_grip(
@@ -2269,8 +2318,16 @@ fn place_row(
         ui.visuals().weak_text_color()
     };
     crate::icons::paint_x(&painter, delete_rect.shrink(5.0), delete_color);
+    let edit_color = if edit.hovered() {
+        ui.visuals().strong_text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    crate::icons::paint_pencil(&painter, edit_rect.shrink(5.0), edit_color);
     (
         body.on_hover_cursor(egui::CursorIcon::Grab),
+        edit.on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Edit place"),
         delete
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .on_hover_text("Remove place"),
@@ -2982,6 +3039,42 @@ fn ansi(index: u8) -> egui::Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_endpoint_is_the_first_route_when_editing() {
+        let mut editor = PlaceEditorState {
+            origin_id: Some(Uuid::new_v4()),
+            user: "ada".into(),
+            // A stale host from the form must not win over the route list.
+            host: "stale.example".into(),
+            backend: Backend::Herdr,
+            session: String::new(),
+            label: String::new(),
+            routes: vec![Route::direct("riverwood")],
+            fingerprint: String::new(),
+        };
+        assert_eq!(editor_endpoint(&editor), "riverwood");
+        assert_eq!(editor_draft(&editor).unwrap().endpoint_host(), "riverwood");
+        editor.routes.clear();
+        assert_eq!(editor_endpoint(&editor), "");
+        assert!(!is_remote(&editor));
+    }
+
+    #[test]
+    fn editor_endpoint_is_the_typed_address_when_adding() {
+        let editor = PlaceEditorState {
+            origin_id: None,
+            user: "ada".into(),
+            host: "riverwood".into(),
+            backend: Backend::Herdr,
+            session: String::new(),
+            label: String::new(),
+            routes: Vec::new(),
+            fingerprint: String::new(),
+        };
+        assert_eq!(editor_endpoint(&editor), "riverwood");
+        assert!(is_remote(&editor));
+    }
 
     #[test]
     fn editor_needs_a_session_but_the_login_is_optional() {
