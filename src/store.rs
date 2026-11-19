@@ -144,6 +144,93 @@ impl AppStore {
         }
     }
 
+    /// Add this machine as a place. The backend is Herdr and a missing user
+    /// falls back to the login name.
+    pub fn add_local_place(&mut self, user: impl Into<String>) -> Uuid {
+        let user = user.into().trim().to_string();
+        let user = if user.is_empty() { login_name() } else { user };
+        let place = Place {
+            id: Uuid::new_v4(),
+            user,
+            host: String::new(),
+            backend: Backend::Herdr,
+            session: None,
+            label: None,
+            routes: Vec::new(),
+            fingerprint: None,
+        };
+        self.insert_place(place)
+    }
+
+    /// Add `route` as a way to reach the node whose SSH host key fingerprint is
+    /// `fingerprint`. A node that already owns the fingerprint absorbs the
+    /// route; otherwise this creates a node for it. Places loaded from v1 have
+    /// no fingerprint yet, so the matching host adopts the learned one.
+    pub fn add_endpoint(
+        &mut self,
+        user: impl Into<String>,
+        host: impl Into<String>,
+        fingerprint: impl Into<String>,
+        route: Route,
+    ) -> Uuid {
+        let user = user.into().trim().to_string();
+        let host = host.into().trim().to_string();
+        let fingerprint = fingerprint.into().trim().to_string();
+        if !fingerprint.is_empty() {
+            if let Some(index) = self
+                .places
+                .iter()
+                .position(|place| place.fingerprint.as_deref() == Some(fingerprint.as_str()))
+            {
+                let id = self.places[index].id;
+                let before = self.places[index].routes.clone();
+                crate::route::remember(&mut self.places[index].routes, route);
+                if self.places[index].routes != before {
+                    self.persist();
+                }
+                self.select(id);
+                return id;
+            }
+            if let Some(index) = self.places.iter().position(|place| {
+                place.fingerprint.as_deref().is_none_or(str::is_empty) && place.host == host
+            }) {
+                self.places[index].fingerprint = Some(fingerprint);
+                crate::route::remember(&mut self.places[index].routes, route);
+                let id = self.places[index].id;
+                self.persist();
+                self.select(id);
+                return id;
+            }
+        }
+        let mut routes = Vec::new();
+        crate::route::remember(&mut routes, route);
+        let place = Place {
+            id: Uuid::new_v4(),
+            user,
+            host,
+            backend: Backend::Herdr,
+            session: None,
+            label: None,
+            routes,
+            fingerprint: if fingerprint.is_empty() {
+                None
+            } else {
+                Some(fingerprint)
+            },
+        };
+        self.insert_place(place)
+    }
+
+    fn insert_place(&mut self, place: Place) -> Uuid {
+        let id = place.id;
+        self.places.push(place);
+        self.attaches.insert(id, PlaceAttach::default());
+        let _ = self.ensure_progress(id);
+        self.persist();
+        self.select(id);
+        id
+    }
+
     pub fn drop_all_connections(&mut self) {
         self.debug_overlay = false;
         let ids: Vec<_> = self.places.iter().map(|place| place.id).collect();
@@ -232,25 +319,6 @@ impl AppStore {
             routes,
             fingerprint,
         };
-        if draft.origin_id.is_none()
-            && let Some(fingerprint) = place.fingerprint.as_deref()
-            && let Some(index) = self.places.iter().position(|item| {
-                item.fingerprint.as_deref() == Some(fingerprint)
-                    && item.backend == place.backend
-                    && item.session == place.session
-            })
-        {
-            // Same node, another way in: the fingerprint is the identity, so fold
-            // the new routes into the place that already owns it.
-            let mut existing = self.places[index].clone();
-            let existing_id = existing.id;
-            crate::route::merge(&mut existing.routes, place.routes.clone());
-            self.places[index] = existing;
-            self.editor = None;
-            self.persist();
-            self.select(existing_id);
-            return;
-        }
         let should_reattach =
             if let Some(index) = self.places.iter().position(|item| item.id == place.id) {
                 let idle = self
@@ -612,7 +680,28 @@ mod tests {
     }
 
     #[test]
-    fn adding_a_known_fingerprint_folds_routes_into_that_place() {
+    fn add_endpoint_creates_a_node_for_a_new_fingerprint() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let count = store.places.len();
+        let id = store.add_endpoint(
+            "ada",
+            "riverwood",
+            "SHA256:NODE",
+            Route::mdns("riverwood.local"),
+        );
+        assert_eq!(store.places.len(), count + 1);
+        assert_eq!(store.selected_id, Some(id));
+        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        assert_eq!(place.host, "riverwood");
+        assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
+        assert_eq!(place.routes.len(), 1);
+        assert!(place.routes[0].last);
+        assert_eq!(place.routes[0].host, "riverwood.local");
+    }
+
+    #[test]
+    fn add_endpoint_folds_a_route_into_the_node_with_that_fingerprint() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
         let mut node = Place::new("ada", "riverwood", Backend::Herdr, None);
@@ -621,19 +710,8 @@ mod tests {
         node.routes = vec![Route::direct("riverwood")];
         store.places[0] = node.clone();
         let count = store.places.len();
-        store.begin_add();
-        {
-            let editor = store.editor.as_mut().unwrap();
-            editor.user = "ada".into();
-            editor.host = "riften".into();
-            editor.backend = Backend::Herdr;
-            editor.fingerprint = "SHA256:NODE".into();
-            editor.routes = vec![Route {
-                last: true,
-                ..Route::mdns("riften.local")
-            }];
-        }
-        store.save_editor();
+        let id = store.add_endpoint("bob", "riften", "SHA256:NODE", Route::mdns("riften.local"));
+        assert_eq!(id, node.id);
         assert_eq!(store.places.len(), count);
         assert_eq!(store.selected_id, Some(node.id));
         let merged = store
@@ -641,6 +719,7 @@ mod tests {
             .iter()
             .find(|place| place.id == node.id)
             .unwrap();
+        assert_eq!(merged.user, "ada");
         assert!(merged.routes.iter().any(|route| route.host == "riverwood"));
         assert!(
             merged
@@ -648,6 +727,33 @@ mod tests {
                 .iter()
                 .any(|route| route.host == "riften.local" && route.last)
         );
+    }
+
+    #[test]
+    fn add_endpoint_teaches_an_unpinned_place_its_fingerprint() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        store.places[0] = Place::new("ada", "riverwood", Backend::Herdr, None);
+        let id = store.places[0].id;
+        store.add_endpoint(
+            "ada",
+            "riverwood",
+            "SHA256:NODE",
+            Route::direct("riverwood"),
+        );
+        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
+        assert_eq!(place.routes.len(), 1);
+    }
+
+    #[test]
+    fn add_local_place_defaults_the_user_to_the_login_name() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let id = store.add_local_place("");
+        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        assert!(place.is_local());
+        assert_eq!(place.user, login_name());
     }
 
     #[test]

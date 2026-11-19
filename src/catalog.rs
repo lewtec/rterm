@@ -68,11 +68,10 @@ impl CatalogIo {
         self.prepare()?;
         let files = self.place_files();
         if files.is_empty() && self.legacy.is_file() {
+            // v1 is read into the same model in memory. Leave the file alone:
+            // rewriting or deleting it needs an explicit migration.
             let text = std::fs::read_to_string(&self.legacy)?;
-            let document = codec::decode(&text)?;
-            self.save(&document)?;
-            let _ = std::fs::remove_file(&self.legacy);
-            return Ok(document);
+            return Ok(codec::decode(&text)?);
         }
         let mut places = Vec::new();
         for file in files {
@@ -249,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_legacy_toml_into_place_files() {
+    fn loads_legacy_toml_without_touching_it() {
         let tmp = Tmp::new();
         let toml = tmp.0.join("places.toml");
         let place = Place {
@@ -273,9 +272,8 @@ mod tests {
         let io = CatalogIo::from_legacy_file(toml.clone());
         let loaded = io.load().unwrap();
         assert_eq!(loaded.places, vec![place.clone()]);
-        assert!(!toml.exists());
-        let places_dir = tmp.0.join("places");
-        assert!(places_dir.join(place::file_name(0, &place)).is_file());
+        assert!(toml.is_file());
+        assert!(place_file_names(&tmp.0.join("places")).is_empty());
     }
 
     #[test]
