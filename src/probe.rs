@@ -141,6 +141,34 @@ pub fn choose_route(place: &Place, route: &Route) -> Result<Choice, ChooseError>
     choose_route_with(place, route, &SshProber)
 }
 
+/// What one probed route says about the place's pin.
+enum Verdict {
+    Accepted(Choice),
+    Mismatch(Attempt),
+}
+
+fn verify_probe(route: &Route, probe: Probe, pin: Option<&str>) -> Verdict {
+    let found = preferred(&probe.keys).unwrap_or_default();
+    match pin {
+        Some(expected) if !probe.keys.iter().any(|key| key.fingerprint == expected) => {
+            Verdict::Mismatch(Attempt {
+                route: route.clone(),
+                reason: found,
+            })
+        }
+        Some(_) => Verdict::Accepted(Choice {
+            route: route.clone(),
+            learned: None,
+            known_hosts: probe.known_hosts,
+        }),
+        None => Verdict::Accepted(Choice {
+            route: route.clone(),
+            learned: Some(found),
+            known_hosts: probe.known_hosts,
+        }),
+    }
+}
+
 fn choose_route_with(
     place: &Place,
     route: &Route,
@@ -157,31 +185,14 @@ fn choose_route_with(
     match prober.probe(place, route) {
         Err(reason) => Err(failed(reason)),
         Ok(probe) if probe.keys.is_empty() => Err(failed("no host key".into())),
-        Ok(probe) => {
-            let found = preferred(&probe.keys).unwrap_or_default();
-            match pin.as_ref() {
-                Some(expected) if !probe.keys.iter().any(|key| &key.fingerprint == expected) => {
-                    Err(ChooseError::HostKeyChanged {
-                        host: driver::ssh_target(place),
-                        expected: expected.clone(),
-                        found: vec![Attempt {
-                            route: route.clone(),
-                            reason: found,
-                        }],
-                    })
-                }
-                Some(_) => Ok(Choice {
-                    route: route.clone(),
-                    learned: None,
-                    known_hosts: probe.known_hosts,
-                }),
-                None => Ok(Choice {
-                    route: route.clone(),
-                    learned: Some(found),
-                    known_hosts: probe.known_hosts,
-                }),
-            }
-        }
+        Ok(probe) => match verify_probe(route, probe, pin.as_deref()) {
+            Verdict::Accepted(choice) => Ok(choice),
+            Verdict::Mismatch(attempt) => Err(ChooseError::HostKeyChanged {
+                host: driver::ssh_target(place),
+                expected: pin.unwrap_or_default(),
+                found: vec![attempt],
+            }),
+        },
     }
 }
 
@@ -196,33 +207,10 @@ pub fn choose_with(place: &Place, prober: &dyn Prober) -> Result<Choice, ChooseE
                 route,
                 reason: "no host key".into(),
             }),
-            Ok(probe) => {
-                let found = preferred(&probe.keys).unwrap_or_default();
-                match pin.as_ref() {
-                    Some(expected)
-                        if !probe.keys.iter().any(|key| &key.fingerprint == expected) =>
-                    {
-                        mismatches.push(Attempt {
-                            route,
-                            reason: found,
-                        });
-                    }
-                    Some(_) => {
-                        return Ok(Choice {
-                            route,
-                            learned: None,
-                            known_hosts: probe.known_hosts,
-                        });
-                    }
-                    None => {
-                        return Ok(Choice {
-                            route,
-                            learned: Some(found),
-                            known_hosts: probe.known_hosts,
-                        });
-                    }
-                }
-            }
+            Ok(probe) => match verify_probe(&route, probe, pin.as_deref()) {
+                Verdict::Accepted(choice) => return Ok(choice),
+                Verdict::Mismatch(attempt) => mismatches.push(attempt),
+            },
         }
     }
     let host = driver::ssh_target(place);

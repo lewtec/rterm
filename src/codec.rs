@@ -435,26 +435,20 @@ mod tests {
         Uuid::parse_str(text).unwrap()
     }
 
-    /// Swift `"""` strips one shared indent. Test literals keep that indent.
-    fn swift(text: &str) -> String {
-        let text = text.trim_start_matches('\n');
-        let indent = text
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(|line| line.len() - line.trim_start().len())
-            .min()
-            .unwrap_or(0);
-        let lines: Vec<_> = text
-            .lines()
-            .map(|line| {
-                if line.len() >= indent {
-                    &line[indent..]
-                } else {
-                    line.trim_start()
-                }
-            })
-            .collect();
-        lines.join("\n")
+    const PLACE_ID: &str = "11111111-1111-1111-1111-111111111111";
+
+    /// A catalog with one place and no routes. `fields` are the place's TOML
+    /// lines, which start on line 5 so the error line numbers stay stable.
+    fn catalog(version: i64, fields: &str) -> String {
+        format!("version = {version}\n\n[[place]]\nid = \"{PLACE_ID}\"\n{fields}")
+    }
+
+    fn v1(fields: &str) -> String {
+        catalog(1, fields)
+    }
+
+    fn v2(fields: &str) -> String {
+        catalog(2, fields)
     }
 
     #[test]
@@ -497,17 +491,8 @@ mod tests {
 
     #[test]
     fn herdr_session_is_dropped() {
-        let text = swift(
-            r#"
-        version = 1
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        user = "ada"
-        host = "riverwood"
-        backend = "herdr"
-        session = "ignored"
-        "#,
+        let text = v1(
+            "user = \"ada\"\nhost = \"riverwood\"\nbackend = \"herdr\"\nsession = \"ignored\"\n",
         );
         let decoded = decode(&text).unwrap();
         assert!(decoded.places[0].session.is_none());
@@ -515,17 +500,7 @@ mod tests {
 
     #[test]
     fn tmux_requires_session() {
-        let text = swift(
-            r#"
-        version = 1
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        user = "ada"
-        host = "remote.example"
-        backend = "tmux"
-        "#,
-        );
+        let text = v1("user = \"ada\"\nhost = \"remote.example\"\nbackend = \"tmux\"\n");
         assert_eq!(decode(&text).unwrap_err(), CatalogError::SessionRequired(3));
     }
 
@@ -573,17 +548,7 @@ mod tests {
 
     #[test]
     fn localhost_host_normalizes_to_local_place() {
-        let text = swift(
-            r#"
-        version = 1
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        user = "ada"
-        host = "localhost"
-        backend = "herdr"
-        "#,
-        );
+        let text = v1("user = \"ada\"\nhost = \"localhost\"\nbackend = \"herdr\"\n");
         let decoded = decode(&text).unwrap();
         assert_eq!(decoded.places[0].endpoint_host(), "");
         assert_eq!(decoded.places[0].user, "ada");
@@ -595,16 +560,7 @@ mod tests {
 
     #[test]
     fn remote_place_without_user_uses_the_ssh_login() {
-        let text = swift(
-            r#"
-        version = 1
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        host = "riverwood"
-        backend = "herdr"
-        "#,
-        );
+        let text = v1("host = \"riverwood\"\nbackend = \"herdr\"\n");
         let decoded = decode(&text).unwrap();
         assert_eq!(decoded.places[0].user, "");
         assert_eq!(decoded.places[0].endpoint_host(), "riverwood");
@@ -618,23 +574,8 @@ mod tests {
 
     #[test]
     fn routes_alone_name_the_place() {
-        let text = swift(
-            r#"
-        version = 2
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        backend = "herdr"
-
-        [[place.route]]
-        kind = "direct"
-        host = "riverwood"
-
-        [[place.route]]
-        kind = "mdns"
-        host = "riverwood.local"
-        last = true
-        "#,
+        let text = v2(
+            "backend = \"herdr\"\n\n[[place.route]]\nkind = \"direct\"\nhost = \"riverwood\"\n\n[[place.route]]\nkind = \"mdns\"\nhost = \"riverwood.local\"\nlast = true\n",
         );
         let decoded = decode(&text).unwrap();
         assert_eq!(decoded.places[0].endpoint_host(), "riverwood");
@@ -674,17 +615,7 @@ mod tests {
 
     #[test]
     fn version_one_host_becomes_the_first_route() {
-        let text = swift(
-            r#"
-        version = 1
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        user = "ada"
-        host = "whiterun.example"
-        backend = "herdr"
-        "#,
-        );
+        let text = v1("user = \"ada\"\nhost = \"whiterun.example\"\nbackend = \"herdr\"\n");
         let decoded = decode(&text).unwrap();
         assert_eq!(decoded.version, 1);
         assert_eq!(decoded.places[0].endpoint_host(), "whiterun.example");
@@ -703,29 +634,8 @@ mod tests {
 
     #[test]
     fn legacy_host_reuses_the_matching_route_and_its_last_mark() {
-        let text = swift(
-            r#"
-        version = 2
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        user = "ada"
-        host = "riverwood"
-        backend = "herdr"
-
-        [[place.route]]
-        kind = "tailscale"
-        host = "100.64.0.7"
-
-        [[place.route]]
-        kind = "direct"
-        host = "riverwood"
-        last = true
-
-        [[place.route]]
-        kind = "mdns"
-        host = "riverwood.local"
-        "#,
+        let text = v2(
+            "user = \"ada\"\nhost = \"riverwood\"\nbackend = \"herdr\"\n\n[[place.route]]\nkind = \"tailscale\"\nhost = \"100.64.0.7\"\n\n[[place.route]]\nkind = \"direct\"\nhost = \"riverwood\"\nlast = true\n\n[[place.route]]\nkind = \"mdns\"\nhost = \"riverwood.local\"\n",
         );
         let decoded = decode(&text).unwrap();
         let place = &decoded.places[0];
@@ -738,19 +648,8 @@ mod tests {
 
     #[test]
     fn route_requires_host() {
-        let text = swift(
-            r#"
-        version = 2
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        user = "ada"
-        host = "whiterun"
-        backend = "herdr"
-
-        [[place.route]]
-        kind = "mdns"
-        "#,
+        let text = v2(
+            "user = \"ada\"\nhost = \"whiterun\"\nbackend = \"herdr\"\n\n[[place.route]]\nkind = \"mdns\"\n",
         );
         assert_eq!(
             decode(&text).unwrap_err(),
@@ -760,20 +659,8 @@ mod tests {
 
     #[test]
     fn unknown_route_kind_is_rejected() {
-        let text = swift(
-            r#"
-        version = 2
-
-        [[place]]
-        id = "11111111-1111-1111-1111-111111111111"
-        user = "ada"
-        host = "whiterun"
-        backend = "herdr"
-
-        [[place.route]]
-        kind = "carrier-pigeon"
-        host = "whiterun.local"
-        "#,
+        let text = v2(
+            "user = \"ada\"\nhost = \"whiterun\"\nbackend = \"herdr\"\n\n[[place.route]]\nkind = \"carrier-pigeon\"\nhost = \"whiterun.local\"\n",
         );
         assert_eq!(
             decode(&text).unwrap_err(),

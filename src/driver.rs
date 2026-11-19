@@ -257,9 +257,9 @@ mod tests {
     }
 
     #[test]
-    fn empty_host_is_local_login_shell() {
-        let place = Place::new("", "", Backend::Herdr, None);
-        let launched = launch(&place, None, None);
+    fn local_places_use_the_local_shell() {
+        let herdr = Place::new("", "", Backend::Herdr, None);
+        let launched = launch(&herdr, None, None);
         assert_eq!(launched.executable, local_shell());
         assert_eq!(
             launched.arguments,
@@ -267,8 +267,20 @@ mod tests {
         );
         assert_eq!(launched.current_directory, Some(home_dir()));
         assert_eq!(
-            place.display_label(),
+            herdr.display_label(),
             format!("{}@localhost:herdr", login_name())
+        );
+
+        // A whitespace-only host is still this machine.
+        let tmux = Place::new("", "  ", Backend::Tmux, Some("dev".into()));
+        assert!(tmux.is_local());
+        assert_eq!(
+            tmux.display_label(),
+            format!("{}@localhost:tmux(dev)", login_name())
+        );
+        assert_eq!(
+            launch(&tmux, None, None).arguments,
+            vec!["-lc".to_string(), "tmux new-session -A -s 'dev'".into()]
         );
     }
 
@@ -347,35 +359,26 @@ mod tests {
     }
 
     #[test]
-    fn this_machine_does_not_use_ssh() {
-        let Some(name) = std::fs::read_to_string("/etc/hostname")
+    fn local_names_are_local_not_ssh() {
+        for host in ["localhost", "127.0.0.1", "127.0.1.1", "::1", "[::1]"] {
+            let place = Place::new("ada", host, Backend::Herdr, None);
+            assert!(place.is_local(), "{host}");
+            assert_eq!(place.display_label(), "ada@localhost:herdr");
+            let launched = launch(&place, None, None);
+            assert_eq!(launched.executable, local_shell());
+            assert_ne!(launched.executable, SSH_EXECUTABLE);
+        }
+        // This machine's own name is local too.
+        if let Some(name) = std::fs::read_to_string("/etc/hostname")
             .ok()
             .and_then(|text| text.lines().next().map(str::trim).map(str::to_string))
             .filter(|name| !name.is_empty())
-        else {
-            return;
-        };
-        let place = Place::new("ada", name, Backend::Herdr, None);
-        assert!(place.is_local());
-        assert_eq!(launch(&place, None, None).executable, local_shell());
-        assert_eq!(place.display_label(), "ada@localhost:herdr");
-    }
-
-    #[test]
-    fn localhost_is_local_not_ssh() {
-        let place = Place::new("ada", "localhost", Backend::Herdr, None);
-        assert!(place.is_local());
-        assert_eq!(place.display_label(), "ada@localhost:herdr");
-        assert_eq!(launch(&place, None, None).executable, local_shell());
-        assert_ne!(launch(&place, None, None).executable, SSH_EXECUTABLE);
-    }
-
-    #[test]
-    fn loopback_literals_are_local() {
-        assert!(Place::new("ada", "127.0.0.1", Backend::Herdr, None).is_local());
-        assert!(Place::new("ada", "127.0.1.1", Backend::Herdr, None).is_local());
-        assert!(Place::new("ada", "::1", Backend::Herdr, None).is_local());
-        assert!(Place::new("ada", "[::1]", Backend::Herdr, None).is_local());
+        {
+            let place = Place::new("ada", name, Backend::Herdr, None);
+            assert!(place.is_local());
+            assert_eq!(launch(&place, None, None).executable, local_shell());
+            assert_eq!(place.display_label(), "ada@localhost:herdr");
+        }
         assert!(!Place::new("ada", "riverwood", Backend::Herdr, None).is_local());
     }
 
@@ -454,20 +457,6 @@ mod tests {
                 "ada@remote.example".into(),
                 "cat > '/tmp/rterm-paste-x.png'".into(),
             ]
-        );
-    }
-
-    #[test]
-    fn empty_host_tmux_label() {
-        let place = Place::new("", "  ", Backend::Tmux, Some("dev".into()));
-        assert!(place.is_local());
-        assert_eq!(
-            place.display_label(),
-            format!("{}@localhost:tmux(dev)", login_name())
-        );
-        assert_eq!(
-            launch(&place, None, None).arguments,
-            vec!["-lc".to_string(), "tmux new-session -A -s 'dev'".into()]
         );
     }
 }
