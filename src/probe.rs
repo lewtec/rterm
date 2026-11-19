@@ -123,6 +123,68 @@ pub fn choose(place: &Place) -> Result<Choice, ChooseError> {
     choose_with(place, &SshProber)
 }
 
+/// Attach path: try the route that worked last and nothing else. When the catalog
+/// has no memory yet, fall back to discovery so old places still connect.
+pub fn choose_preferred(place: &Place) -> Result<Choice, ChooseError> {
+    choose_preferred_with(place, &SshProber)
+}
+
+fn choose_preferred_with(place: &Place, prober: &dyn Prober) -> Result<Choice, ChooseError> {
+    match route::last_route(place) {
+        Some(route) => choose_route_with(place, route, prober),
+        None => choose_with(place, prober),
+    }
+}
+
+/// Probe exactly one route, the one the user picked from the route list.
+pub fn choose_route(place: &Place, route: &Route) -> Result<Choice, ChooseError> {
+    choose_route_with(place, route, &SshProber)
+}
+
+fn choose_route_with(
+    place: &Place,
+    route: &Route,
+    prober: &dyn Prober,
+) -> Result<Choice, ChooseError> {
+    let pin = pin_of(place);
+    let failed = |reason: String| ChooseError::NoRoute {
+        host: place.host.clone(),
+        attempts: vec![Attempt {
+            route: route.clone(),
+            reason,
+        }],
+    };
+    match prober.probe(place, route) {
+        Err(reason) => Err(failed(reason)),
+        Ok(probe) if probe.keys.is_empty() => Err(failed("no host key".into())),
+        Ok(probe) => {
+            let found = preferred(&probe.keys).unwrap_or_default();
+            match pin.as_ref() {
+                Some(expected) if !probe.keys.iter().any(|key| &key.fingerprint == expected) => {
+                    Err(ChooseError::HostKeyChanged {
+                        host: place.host.clone(),
+                        expected: expected.clone(),
+                        found: vec![Attempt {
+                            route: route.clone(),
+                            reason: found,
+                        }],
+                    })
+                }
+                Some(_) => Ok(Choice {
+                    route: route.clone(),
+                    learned: None,
+                    known_hosts: probe.known_hosts,
+                }),
+                None => Ok(Choice {
+                    route: route.clone(),
+                    learned: Some(found),
+                    known_hosts: probe.known_hosts,
+                }),
+            }
+        }
+    }
+}
+
 pub fn choose_with(place: &Place, prober: &dyn Prober) -> Result<Choice, ChooseError> {
     let pin = pin_of(place);
     let mut attempts = Vec::new();
@@ -436,6 +498,39 @@ mod tests {
         }
     }
 
+    /// Answers like `fake`, and records which routes were asked in what order.
+    struct Recording {
+        calls: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl Recording {
+        fn new() -> Self {
+            Self {
+                calls: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.borrow().clone()
+        }
+    }
+
+    impl Prober for Recording {
+        fn probe(&self, _place: &Place, route: &Route) -> Result<Probe, String> {
+            self.calls.borrow_mut().push(route.host.clone());
+            match route.host.as_str() {
+                "riverwood.local" | "riverwood.tailnet.ts.net" => Ok(Probe {
+                    keys: vec![Key {
+                        kind: "ED25519".into(),
+                        fingerprint: "SHA256:SAME".into(),
+                    }],
+                    known_hosts: "rterm-x ssh-ed25519 AAAA SHA256:SAME\n".into(),
+                }),
+                _ => Err("timed out".into()),
+            }
+        }
+    }
+
     #[test]
     fn picks_the_first_verified_route() {
         let place = place("riverwood", None);
@@ -472,6 +567,47 @@ mod tests {
         let text = error.to_string();
         assert!(text.contains("no route to riften"));
         assert!(text.contains("riften (timed out)"));
+    }
+
+    #[test]
+    fn preferred_route_is_the_only_one_probed() {
+        let mut place = place("riverwood", Some("SHA256:SAME"));
+        place.routes = vec![
+            Route {
+                last: true,
+                ..Route::mdns("riverwood.local")
+            },
+            Route::tailscale("riverwood.tailnet.ts.net"),
+        ];
+        let prober = Recording::new();
+        let choice = choose_preferred_with(&place, &prober).unwrap();
+        assert_eq!(choice.route.host, "riverwood.local");
+        assert_eq!(prober.calls(), vec!["riverwood.local".to_string()]);
+    }
+
+    #[test]
+    fn no_memory_falls_back_to_discovery() {
+        let place = place("riverwood", None);
+        let prober = Recording::new();
+        let choice = choose_preferred_with(&place, &prober).unwrap();
+        assert_eq!(choice.route.host, "riverwood.local");
+        assert!(prober.calls().len() > 1);
+    }
+
+    #[test]
+    fn chosen_route_that_mismatches_is_reported_alone() {
+        let place = place("riverwood", Some("SHA256:OTHER"));
+        let prober = Recording::new();
+        let route = Route::mdns("riverwood.local");
+        let error = choose_route_with(&place, &route, &prober).unwrap_err();
+        match error {
+            ChooseError::HostKeyChanged { found, .. } => {
+                assert_eq!(found.len(), 1);
+                assert_eq!(found[0].route.host, "riverwood.local");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(prober.calls(), vec!["riverwood.local".to_string()]);
     }
 
     #[test]

@@ -69,18 +69,17 @@ enum WizardMsg {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AddStep {
-    Details,
+    /// Establish the node identity: probe the host and pin its SSH host key.
+    Fingerprint,
+    /// Set the ways to reach that same fingerprint.
     Routes,
-    Review,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AddAction {
-    Discover,
+    Check,
     Probe,
-    Review,
-    BackRoutes,
-    BackDetails,
+    BackFingerprint,
     Save,
 }
 
@@ -89,7 +88,10 @@ pub struct RtermApp {
     sessions: HashMap<Uuid, Session>,
     pending_routes: HashMap<Uuid, PendingRoute>,
     active_routes: HashMap<Uuid, Route>,
+    forced_routes: HashMap<Uuid, Route>,
     wizard: Option<WizardRun>,
+    fingerprint_check: Option<Receiver<Result<Choice, ChooseError>>>,
+    fingerprint_error: Option<String>,
     add_step: AddStep,
     sleep: SleepWatch,
     fill: bool,
@@ -122,8 +124,11 @@ impl RtermApp {
             sessions: HashMap::new(),
             pending_routes: HashMap::new(),
             active_routes: HashMap::new(),
+            forced_routes: HashMap::new(),
             wizard: None,
-            add_step: AddStep::Details,
+            fingerprint_check: None,
+            fingerprint_error: None,
+            add_step: AddStep::Fingerprint,
             sleep: SleepWatch::start(),
             fill: false,
             windowed_size: None,
@@ -214,6 +219,8 @@ impl RtermApp {
         });
         self.active_routes
             .retain(|id, _| wanted.iter().any(|(want_id, _, _)| want_id == id));
+        self.forced_routes
+            .retain(|id, _| wanted.iter().any(|(want_id, _, _)| want_id == id));
         for (id, generation, place) in wanted {
             if self.sessions.get(&id).map(Session::generation) == Some(generation) {
                 continue;
@@ -229,27 +236,42 @@ impl RtermApp {
             match received {
                 None => {
                     let probe_place = place.clone();
+                    let forced = self.forced_routes.get(&id).cloned();
+                    let headline = if forced.is_some() {
+                        "Trying the chosen route…"
+                    } else if route::last_route(&place).is_some() {
+                        "Trying the last route…"
+                    } else {
+                        "Finding a route…"
+                    };
                     let (tx, rx) = mpsc::channel();
                     std::thread::spawn(move || {
-                        let _ = tx.send(probe::choose(&probe_place));
+                        let result = match forced {
+                            Some(route) => probe::choose_route(&probe_place, &route),
+                            None => probe::choose_preferred(&probe_place),
+                        };
+                        let _ = tx.send(result);
                     });
                     self.pending_routes
                         .insert(id, PendingRoute { generation, rx });
-                    self.store.note_progress(id, "Finding a route…");
+                    self.store.note_progress(id, headline);
                 }
                 Some(Err(mpsc::TryRecvError::Empty)) => {}
                 Some(Err(mpsc::TryRecvError::Disconnected)) => {
                     self.pending_routes.remove(&id);
+                    self.forced_routes.remove(&id);
                     self.store
                         .fail_attach(id, "route discovery died".into(), Some(generation));
                 }
                 Some(Ok(Err(error))) => {
                     self.pending_routes.remove(&id);
+                    self.forced_routes.remove(&id);
                     self.store
                         .fail_attach(id, error.to_string(), Some(generation));
                 }
                 Some(Ok(Ok(choice))) => {
                     self.pending_routes.remove(&id);
+                    self.forced_routes.remove(&id);
                     if let Some(learned) = choice.learned.as_ref() {
                         self.store.learn_fingerprint(id, learned);
                     }
@@ -261,6 +283,7 @@ impl RtermApp {
                         );
                         continue;
                     }
+                    self.store.remember_route(id, &choice.route);
                     self.active_routes.insert(id, choice.route.clone());
                     self.start_session(&place, Some(&choice.route), generation);
                 }
@@ -802,7 +825,21 @@ impl RtermApp {
             egui::FontId::proportional(13.0),
             ui.visuals().text_color(),
         );
-        response.clone().on_hover_text(place.display_label());
+        let hover = match place
+            .fingerprint
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            Some(fingerprint) => {
+                format!(
+                    "{}\n{}",
+                    place.display_label(),
+                    short_fingerprint(fingerprint)
+                )
+            }
+            None => place.display_label(),
+        };
+        response.clone().on_hover_text(hover);
         if response.clicked() {
             self.store.select(place.id);
         }
@@ -899,14 +936,79 @@ impl RtermApp {
         } else {
             match phase {
                 Some(rterm::attach::Phase::Failed(message)) => {
-                    if failure_overlay(ui, rect, &message).clicked() {
-                        self.store.reconnect(place.id);
+                    if place.is_local() {
+                        if failure_overlay(ui, rect, &message).clicked() {
+                            self.store.reconnect(place.id);
+                        }
+                    } else {
+                        self.route_picker(ui, rect, &place, &message);
                     }
                 }
                 _ => center_text(ui, rect, "Idle", "Click this tab or Reconnect to attach."),
             }
         }
         if self.store.debug_overlay && failure_overlay(ui, rect, "debug overlay").clicked() {
+            self.store.reconnect(place.id);
+        }
+    }
+
+    /// When the last route fails, the retry is choosing another path. The list is
+    /// the same one the attach walks, so what you pick is what gets probed.
+    fn route_picker(&mut self, ui: &mut egui::Ui, rect: egui::Rect, place: &Place, message: &str) {
+        let routes = route::candidates(place);
+        ui.painter()
+            .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(190));
+        let width = (rect.width() - 64.0).clamp(260.0, 560.0);
+        let height = (rect.height() - 48.0).clamp(160.0, 420.0);
+        let area = egui::Rect::from_center_size(rect.center(), egui::vec2(width, height));
+        let mut chosen: Option<Route> = None;
+        let mut retry = false;
+        ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+            ui.label(
+                egui::RichText::new(format!("Could not reach {}", place.display_label()))
+                    .size(17.0)
+                    .strong(),
+            );
+            ui.add(egui::Label::new(egui::RichText::new(message).small().weak()).wrap());
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Choose another route to retry").strong());
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical()
+                .max_height(height - 130.0)
+                .show(ui, |ui| {
+                    for route in &routes {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(route.kind.label()).small().weak());
+                            ui.monospace(route.display());
+                            if route.last {
+                                ui.label(
+                                    egui::RichText::new("last used")
+                                        .small()
+                                        .color(egui::Color32::from_rgb(110, 200, 120)),
+                                );
+                            }
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button("Try").clicked() {
+                                        chosen = Some(route.clone());
+                                    }
+                                },
+                            );
+                        });
+                    }
+                });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui.button("Try the last route again").clicked() {
+                    retry = true;
+                }
+            });
+        });
+        if let Some(route) = chosen {
+            self.forced_routes.insert(place.id, route);
+            self.store.reconnect(place.id);
+        } else if retry {
             self.store.reconnect(place.id);
         }
     }
@@ -985,8 +1087,64 @@ impl RtermApp {
     fn start_add(&mut self) {
         self.settings_open = false;
         self.wizard = None;
-        self.add_step = AddStep::Details;
+        self.fingerprint_check = None;
+        self.fingerprint_error = None;
+        self.add_step = AddStep::Fingerprint;
         self.store.begin_add();
+    }
+
+    fn start_fingerprint_check(&mut self) {
+        let Some(editor) = self.store.editor.clone() else {
+            return;
+        };
+        let Some(place) = editor_draft(&editor) else {
+            self.fingerprint_error = Some("Enter a host to check.".into());
+            return;
+        };
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(probe::choose(&place));
+        });
+        self.fingerprint_check = Some(rx);
+        self.fingerprint_error = None;
+    }
+
+    fn poll_fingerprint(&mut self) {
+        let Some(rx) = self.fingerprint_check.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.fingerprint_check = None;
+                self.fingerprint_error = Some("host key check died".into());
+            }
+            Ok(Err(error)) => {
+                self.fingerprint_check = None;
+                self.fingerprint_error = Some(error.to_string());
+            }
+            Ok(Ok(choice)) => {
+                self.fingerprint_check = None;
+                let fallback = self
+                    .store
+                    .editor
+                    .as_ref()
+                    .map(|editor| editor.fingerprint.trim().to_string())
+                    .unwrap_or_default();
+                let fingerprint = choice.learned.clone().unwrap_or(fallback);
+                if fingerprint.is_empty() {
+                    self.fingerprint_error = Some("no host key".into());
+                    return;
+                }
+                if let Some(editor) = self.store.editor.as_mut() {
+                    editor.fingerprint = fingerprint;
+                    route::remember(&mut editor.routes, choice.route.clone());
+                }
+                self.add_step = AddStep::Routes;
+                self.wizard = None;
+                self.start_wizard();
+            }
+        }
     }
 
     fn start_wizard(&mut self) {
@@ -1044,9 +1202,13 @@ impl RtermApp {
             } = &item
                 && let Some(editor) = self.store.editor.as_mut()
             {
-                route::push_unique(&mut editor.routes, route.clone());
                 if editor.fingerprint.trim().is_empty() {
                     editor.fingerprint = fingerprint.clone();
+                }
+                if editor.routes.iter().any(|route| route.last) {
+                    route::push_unique(&mut editor.routes, route.clone());
+                } else {
+                    route::remember(&mut editor.routes, route.clone());
                 }
             }
         }
@@ -1113,6 +1275,7 @@ impl RtermApp {
 
     fn editor_window(&mut self, ctx: &egui::Context) {
         self.poll_wizard();
+        self.poll_fingerprint();
         let adding = self
             .store
             .editor
@@ -1184,7 +1347,7 @@ impl RtermApp {
             });
             ui.label(
                 egui::RichText::new(
-                    "Tried in order before attaching. Empty means discover direct, mDNS and Tailscale.",
+                    "The last one that worked is tried first. Empty means discover direct, mDNS and Tailscale.",
                 )
                 .small()
                 .weak(),
@@ -1251,6 +1414,7 @@ impl RtermApp {
         let mut dismiss = false;
         let mut next: Option<AddAction> = None;
         let directory = self.store.places_directory().display().to_string();
+        let checking = self.fingerprint_check.is_some();
         let discovering = self.wizard.as_ref().is_some_and(|run| !run.done);
         let found = self
             .wizard
@@ -1260,15 +1424,17 @@ impl RtermApp {
         sheet(ctx, "place-editor", &mut open, |ui| {
             ui.set_min_width(460.0);
             ui.label(egui::RichText::new("Add Place").size(18.0));
-            ui.label(egui::RichText::new("Where this tab connects.").weak());
+            ui.label(egui::RichText::new("One node, one fingerprint.").weak());
             ui.add_space(6.0);
             wizard_steps(ui, step);
             ui.add_space(8.0);
             match step {
-                AddStep::Details => {
-                    identity_fields(ui, &mut editor, false, false);
+                AddStep::Fingerprint => {
                     let remote =
                         !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
+                    ui.add_enabled_ui(!checking, |ui| {
+                        identity_fields(ui, &mut editor, false, false);
+                    });
                     ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new(backend_hint(editor.backend))
@@ -1278,35 +1444,66 @@ impl RtermApp {
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new(if remote {
-                            "Next: set the user, probe routes, and pin the host key."
-                        } else {
-                            "This machine needs no route or host key."
-                        })
-                        .small()
-                        .weak(),
-                    );
-                    ui.add_space(6.0);
+                    if remote {
+                        ui.label(
+                            egui::RichText::new(if checking {
+                                "Checking the SSH host key…"
+                            } else {
+                                "rterm connects once to read the SSH host key. That fingerprint becomes this node's identity."
+                            })
+                            .small()
+                            .weak(),
+                        );
+                        if !editor.fingerprint.trim().is_empty() {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Fingerprint").small().weak());
+                                ui.monospace(short_fingerprint(&editor.fingerprint));
+                            });
+                        }
+                    } else {
+                        ui.label(
+                            egui::RichText::new("This machine needs no fingerprint or route.")
+                                .small()
+                                .weak(),
+                        );
+                    }
+                    if let Some(error) = self.fingerprint_error.as_deref() {
+                        ui.add_space(6.0);
+                        ui.label(
+                            egui::RichText::new(error)
+                                .small()
+                                .color(egui::Color32::from_rgb(255, 180, 60)),
+                        );
+                    }
                     if let Some(issue) = details_issue(&editor) {
+                        ui.add_space(6.0);
                         ui.label(
                             egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
                         );
-                        ui.add_space(6.0);
                     }
+                    ui.add_space(8.0);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let label = if checking {
+                            "Checking…"
+                        } else if remote {
+                            "Find fingerprint"
+                        } else {
+                            "Save"
+                        };
+                        let action = if remote {
+                            AddAction::Check
+                        } else {
+                            AddAction::Save
+                        };
                         if ui
                             .add_enabled(
-                                details_issue(&editor).is_none(),
-                                egui::Button::new("Continue").fill(ACCENT),
+                                !checking && details_issue(&editor).is_none(),
+                                egui::Button::new(label).fill(ACCENT),
                             )
                             .clicked()
                         {
-                            next = Some(if remote {
-                                AddAction::Discover
-                            } else {
-                                AddAction::Review
-                            });
+                            next = Some(action);
                         }
                         if ui.button("Cancel").clicked() {
                             dismiss = true;
@@ -1314,9 +1511,18 @@ impl RtermApp {
                     });
                 }
                 AddStep::Routes => {
-                    let ready = editor_draft(&editor).is_some();
-                    ui.label(egui::RichText::new("Who logs in, and how to reach the node.").weak());
-                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Fingerprint").small().weak());
+                        ui.monospace(short_fingerprint(&editor.fingerprint));
+                    });
+                    ui.label(
+                        egui::RichText::new(
+                            "Every route must answer with this key. rterm tries the last one that worked.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    ui.add_space(8.0);
                     egui::Grid::new("route-user")
                         .num_columns(2)
                         .spacing(egui::vec2(12.0, 8.0))
@@ -1331,9 +1537,9 @@ impl RtermApp {
                         }
                         ui.label(
                             egui::RichText::new(if discovering {
-                                "Probing routes…"
+                                "Finding routes…"
                             } else if found.is_empty() {
-                                "Not probed yet."
+                                "No route checked yet."
                             } else {
                                 "Routes checked."
                             })
@@ -1342,7 +1548,7 @@ impl RtermApp {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
                                 .add_enabled(
-                                    ready && !discovering,
+                                    !discovering && editor_draft(&editor).is_some(),
                                     egui::Button::new("Find routes"),
                                 )
                                 .clicked()
@@ -1351,107 +1557,20 @@ impl RtermApp {
                             }
                         });
                     });
+                    ui.add_space(6.0);
+                    if !found.is_empty() {
+                        discovery_list(ui, &found);
+                        ui.add_space(6.0);
+                    }
+                    routes_list(ui, &mut editor.routes);
+                    ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new(
-                            "DNS, mDNS and Tailscale. A route must answer with the node's host key to be kept.",
+                            "Saved order, last route first. Empty means discover direct, mDNS and Tailscale.",
                         )
                         .small()
                         .weak(),
                     );
-                    ui.add_space(8.0);
-                    if !ready {
-                        ui.label(
-                            egui::RichText::new("Type a user to probe routes.")
-                                .small()
-                                .weak(),
-                        );
-                    } else if found.is_empty() {
-                        ui.label(
-                            egui::RichText::new(if discovering {
-                                "Waiting for the first answer…"
-                            } else {
-                                "No route answered. Run Find routes again, go back to change the host, or continue and add a route by hand."
-                            })
-                            .small()
-                            .weak(),
-                        );
-                    } else {
-                        discovery_list(ui, &found);
-                    }
-                    ui.add_space(8.0);
-                    if !editor.fingerprint.trim().is_empty() {
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Host key").small().weak());
-                            ui.monospace(short_fingerprint(&editor.fingerprint));
-                        });
-                    }
-                    ui.add_space(6.0);
-                    ui.separator();
-                    ui.add_space(6.0);
-                    if let Some(issue) = save_issue(&editor) {
-                        ui.label(
-                            egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
-                        );
-                        ui.add_space(6.0);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let label = if discovering { "Skip" } else { "Review" };
-                        if ui
-                            .add_enabled(can_save(&editor), egui::Button::new(label).fill(ACCENT))
-                            .clicked()
-                        {
-                            next = Some(AddAction::Review);
-                        }
-                        if ui.button("Back").clicked() {
-                            next = Some(AddAction::BackDetails);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            dismiss = true;
-                        }
-                    });
-                }
-                AddStep::Review => {
-                    let remote =
-                        !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
-                    if remote {
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Login").small().weak());
-                            ui.monospace(format!("{}@{}", editor.user.trim(), editor.host.trim()));
-                        });
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            ui.label("Fingerprint");
-                            ui.add(
-                                egui::TextEdit::singleline(&mut editor.fingerprint)
-                                    .hint_text("SHA256:… learned on first connect")
-                                    .desired_width(320.0)
-                                    .font(egui::TextStyle::Monospace)
-                                    .id(egui::Id::new("place-fingerprint")),
-                            );
-                        });
-                        ui.label(
-                            egui::RichText::new(
-                                "Pinned to this node. A route that answers with another key is refused.",
-                            )
-                            .small()
-                            .weak(),
-                        );
-                        ui.add_space(8.0);
-                        ui.label(egui::RichText::new("Routes").strong());
-                        routes_list(ui, &mut editor.routes);
-                        ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new(
-                                "Tried in order before attaching. Empty means discover direct, mDNS and Tailscale.",
-                            )
-                            .small()
-                            .weak(),
-                        );
-                    } else {
-                        ui.label(
-                            egui::RichText::new("This machine has no route or host key.").weak(),
-                        );
-                    }
                     ui.add_space(8.0);
                     ui.add(
                         egui::Label::new(egui::RichText::new(directory).small().weak())
@@ -1472,11 +1591,7 @@ impl RtermApp {
                             next = Some(AddAction::Save);
                         }
                         if ui.button("Back").clicked() {
-                            next = Some(if remote {
-                                AddAction::BackRoutes
-                            } else {
-                                AddAction::BackDetails
-                            });
+                            next = Some(AddAction::BackFingerprint);
                         }
                         if ui.button("Cancel").clicked() {
                             dismiss = true;
@@ -1489,35 +1604,27 @@ impl RtermApp {
             open = false;
         }
         match next {
-            Some(AddAction::Discover) => {
-                editor.routes.clear();
-                editor.fingerprint.clear();
-                self.add_step = AddStep::Routes;
-                self.wizard = None;
+            Some(AddAction::Check) => {
                 self.store.editor = Some(editor);
-                self.start_wizard();
+                self.start_fingerprint_check();
             }
             Some(AddAction::Probe) => {
-                self.add_step = AddStep::Routes;
-                self.wizard = None;
                 self.store.editor = Some(editor);
+                self.wizard = None;
                 self.start_wizard();
             }
-            Some(AddAction::Review) => {
-                self.add_step = AddStep::Review;
-                self.store.editor = Some(editor);
-            }
-            Some(AddAction::BackRoutes) => {
-                self.add_step = AddStep::Routes;
-                self.store.editor = Some(editor);
-            }
-            Some(AddAction::BackDetails) => {
-                self.add_step = AddStep::Details;
+            Some(AddAction::BackFingerprint) => {
+                editor.fingerprint.clear();
+                editor.routes.clear();
+                self.fingerprint_error = None;
                 self.wizard = None;
+                self.add_step = AddStep::Fingerprint;
                 self.store.editor = Some(editor);
             }
             Some(AddAction::Save) => {
                 self.wizard = None;
+                self.fingerprint_check = None;
+                self.fingerprint_error = None;
                 self.store.editor = Some(editor);
                 self.store.save_editor();
                 return;
@@ -1526,7 +1633,9 @@ impl RtermApp {
         }
         if !open {
             self.wizard = None;
-            self.add_step = AddStep::Details;
+            self.fingerprint_check = None;
+            self.fingerprint_error = None;
+            self.add_step = AddStep::Fingerprint;
             self.store.editor = None;
         }
     }
@@ -1757,9 +1866,8 @@ fn backend_hint(backend: Backend) -> &'static str {
 
 fn wizard_steps(ui: &mut egui::Ui, step: AddStep) {
     let steps = [
-        ("1 Details", AddStep::Details),
+        ("1 Fingerprint", AddStep::Fingerprint),
         ("2 Routes", AddStep::Routes),
-        ("3 Review", AddStep::Review),
     ];
     ui.horizontal(|ui| {
         for (index, (label, value)) in steps.into_iter().enumerate() {
@@ -1839,6 +1947,13 @@ fn routes_list(ui: &mut egui::Ui, routes: &mut Vec<Route>) {
             if ui.button("×").on_hover_text("Remove route").clicked() {
                 remove = Some(index);
             }
+            if route.last {
+                ui.label(
+                    egui::RichText::new("last used")
+                        .small()
+                        .color(egui::Color32::from_rgb(110, 200, 120)),
+                );
+            }
         });
     }
     if let Some(index) = remove {
@@ -1863,7 +1978,7 @@ fn discovery_list(ui: &mut egui::Ui, found: &[Discovered]) {
 fn editor_draft(editor: &PlaceEditorState) -> Option<Place> {
     let host = editor.host.trim();
     let user = editor.user.trim();
-    if host.is_empty() || Place::is_loopback_host(host) || user.is_empty() {
+    if host.is_empty() || Place::is_loopback_host(host) {
         return None;
     }
     let backend = editor.backend;

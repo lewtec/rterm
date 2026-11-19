@@ -377,6 +377,7 @@ mod tests {
             kind: crate::route::RouteKind::Direct,
             host: "100.64.0.7".into(),
             port: Some(2222),
+            last: false,
         };
         let arguments = ssh_arguments(&place, Some(&route), None);
         assert!(arguments.contains(&format!(

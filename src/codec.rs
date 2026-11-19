@@ -110,6 +110,18 @@ pub fn decode(text: &str) -> Result<CatalogDocument, CatalogError> {
                     })?;
                     route.port = Some(port);
                 }
+                "last" => {
+                    route.last = Some(match value.as_str() {
+                        "true" => true,
+                        "false" => false,
+                        _ => {
+                            return Err(CatalogError::InvalidValue(
+                                "route last".into(),
+                                line_number,
+                            ));
+                        }
+                    });
+                }
                 _ => {
                     return Err(CatalogError::UnexpectedLine(line_number, line.to_string()));
                 }
@@ -201,6 +213,9 @@ pub fn encode(document: &CatalogDocument) -> String {
             lines.push(format!("host = {}", quote(&route.host)));
             if let Some(port) = route.port {
                 lines.push(format!("port = {port}"));
+            }
+            if route.last {
+                lines.push("last = true".into());
             }
             lines.push(String::new());
         }
@@ -299,6 +314,7 @@ struct PartialRoute {
     kind: Option<RouteKind>,
     host: Option<String>,
     port: Option<u16>,
+    last: Option<bool>,
 }
 
 impl PartialRoute {
@@ -314,6 +330,7 @@ impl PartialRoute {
             kind,
             host,
             port: self.port,
+            last: self.last.unwrap_or(false),
         })
     }
 }
@@ -594,11 +611,13 @@ mod tests {
                     kind: RouteKind::Mdns,
                     host: "whiterun.local".into(),
                     port: None,
+                    last: false,
                 },
                 Route {
                     kind: RouteKind::Tailscale,
                     host: "whiterun.tailnet.ts.net".into(),
                     port: Some(2222),
+                    last: true,
                 },
             ],
             fingerprint: Some("SHA256:C8olMcLxERkizT4dlzO1z85UVxdq".into()),

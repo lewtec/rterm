@@ -16,9 +16,9 @@ Each tab is a **place**: a saved attach target. Click a tab to attach. Sleep dro
 
 A place is user, host, and backend (`herdr`, `tmux`, or `screen`). tmux and screen also need a session name.
 
-A place names one node and pins its SSH host key fingerprint. A node may have several routes: a saved host, `<name>.local` (mDNS), or a Tailscale MagicDNS name or IP. rterm probes them in order and attaches through the first one that answers with the pinned key. The first verified route on an unpinned place teaches the fingerprint.
+A place names one node and pins its SSH host key fingerprint. A node may have several routes: a saved host, `<name>.local` (mDNS), or a Tailscale MagicDNS name or IP. Reconnecting tries the route that worked last; when it fails, the pane lists the other ways in and the one you pick becomes the last route. The first verified route on an unpinned place teaches the fingerprint.
 
-The catalog is `~/Documents/rterm/*.rterm-place`. The app writes it. Edits on disk reload. Use **+** or **Place → Add Place…**. Add Place walks through **Details → Routes → Review**: Details takes the host and backend, Routes takes the user and probes DNS, mDNS and Tailscale, and Review shows each answer and the pinned host key before saving. Editing a place keeps the same form with a **Find routes** button.
+The catalog is `~/Documents/rterm/*.rterm-place`. The app writes it. Edits on disk reload. Use **+** or **Place → Add Place…**. Add Place is two steps: **Fingerprint** probes the host once and pins the SSH host key, and **Routes** takes the user and probes every way to reach that same fingerprint. A node whose fingerprint already exists (same backend and session) absorbs the new routes instead of becoming a duplicate. Editing a place keeps the full form with a **Find routes** button.
 
 ```toml
 version = 2
@@ -37,6 +37,7 @@ host = "whiterun.local"
 [[place.route]]
 kind = "tailscale"
 host = "whiterun.tailnet.ts.net"
+last = true
 ```
 
 - Empty host, `localhost`, or `127.0.0.1` is this machine. No SSH. Label: `you@localhost:herdr`.
