@@ -148,7 +148,7 @@ fn choose_route_with(
 ) -> Result<Choice, ChooseError> {
     let pin = pin_of(place);
     let failed = |reason: String| ChooseError::NoRoute {
-        host: place.host.clone(),
+        host: driver::ssh_target(place),
         attempts: vec![Attempt {
             route: route.clone(),
             reason,
@@ -162,7 +162,7 @@ fn choose_route_with(
             match pin.as_ref() {
                 Some(expected) if !probe.keys.iter().any(|key| &key.fingerprint == expected) => {
                     Err(ChooseError::HostKeyChanged {
-                        host: place.host.clone(),
+                        host: driver::ssh_target(place),
                         expected: expected.clone(),
                         found: vec![Attempt {
                             route: route.clone(),
@@ -225,7 +225,7 @@ pub fn choose_with(place: &Place, prober: &dyn Prober) -> Result<Choice, ChooseE
             }
         }
     }
-    let host = place.host.clone();
+    let host = driver::ssh_target(place);
     if !mismatches.is_empty() {
         Err(ChooseError::HostKeyChanged {
             host,
@@ -565,7 +565,7 @@ mod tests {
         let place = place("riften", None);
         let error = choose_with(&place, &fake()).unwrap_err();
         let text = error.to_string();
-        assert!(text.contains("no route to riften"));
+        assert!(text.contains("no route to ada@riften"));
         assert!(text.contains("riften (timed out)"));
     }
 
