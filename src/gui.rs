@@ -1410,7 +1410,7 @@ impl RtermApp {
             ui.label(egui::RichText::new("Add Place").size(18.0));
             ui.label(
                 egui::RichText::new(
-                    "Who logs in, and where. rterm reads the SSH host key and files this host under the node that owns it.",
+                    "Who logs in, and one way to reach it. The SSH host key identifies the node; this address is just the first endpoint.",
                 )
                 .weak(),
             );
@@ -1422,15 +1422,20 @@ impl RtermApp {
                     .show(ui, |ui| {
                         let hint = user_hint(&editor);
                         place_field(ui, "User", &mut editor.user, hint);
-                        place_field(ui, "Host", &mut editor.host, "empty is this machine");
+                        place_field(
+                            ui,
+                            "Endpoint",
+                            &mut editor.host,
+                            "hostname, IP or SSH alias; empty is this machine",
+                        );
                     });
             });
             ui.add_space(6.0);
             ui.label(
                 egui::RichText::new(if is_remote(&editor) {
-                    "A host that answers with a fingerprint already in the catalog becomes another way in, not a new tab."
+                    "If this fingerprint is already in the catalog, the address becomes another endpoint on that node instead of a new tab."
                 } else {
-                    "This machine needs no host key or route."
+                    "This machine needs no host key or endpoint."
                 })
                 .small()
                 .weak(),
@@ -1723,7 +1728,12 @@ fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState) {
         .show(ui, |ui| {
             let hint = user_hint(editor);
             place_field(ui, "User", &mut editor.user, hint);
-            place_field(ui, "Host", &mut editor.host, "empty is this machine");
+            place_field(
+                ui,
+                "Endpoint",
+                &mut editor.host,
+                "hostname, IP or SSH alias; empty is this machine",
+            );
             ui.label("Backend");
             ui.horizontal(|ui| {
                 for backend in Backend::ALL {
@@ -1875,7 +1885,7 @@ fn save_issue(editor: &PlaceEditorState) -> Option<&'static str> {
     let user = editor.user.trim();
     let host = editor.host.trim();
     if !Place::is_loopback_host(host) && user.is_empty() {
-        return Some("A remote host needs a user.");
+        return Some("A remote endpoint needs a user.");
     }
     details_issue(editor)
 }
@@ -2761,7 +2771,7 @@ mod tests {
             routes: Vec::new(),
             fingerprint: String::new(),
         };
-        assert_eq!(save_issue(&editor), Some("A remote host needs a user."));
+        assert_eq!(save_issue(&editor), Some("A remote endpoint needs a user."));
         editor.user = "ada".into();
         assert_eq!(save_issue(&editor), Some("tmux needs a session name."));
         editor.session = "dev".into();
