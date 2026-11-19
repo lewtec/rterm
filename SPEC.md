@@ -91,7 +91,7 @@ Host key exchange happens before authentication, so a route that presents a host
 
 When the place has no fingerprint, the first verified route teaches it. Persist that fingerprint before the attach starts. A route that presents another key is another node: never attach through it. If every route fails, fail the attach with the attempts.
 
-A place remembers the route that worked last (`last = true` on its route). The attach probes only that route. When it fails, the pane lists the other routes and the user retries with one of them; the one that works becomes the last route. A place with no remembered route probes its candidates once to establish one.
+A place remembers the route that worked last (`last = true` on its route). The attach probes only that route. When it fails, the pane lists the other routes and the user retries with one of them; the one that works becomes the last route. A place with no remembered route probes its candidates once to establish one. The tab menu has **Reconnect as**: it lists the candidates with a check on the endpoint in use (the session's route, else the last route, else the first candidate) and reconnects through the one picked.
 
 Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>`, so every route shares one known_hosts identity. Do not write the user's `known_hosts`.
 
