@@ -164,8 +164,10 @@ impl AppStore {
 
     /// Add `route` as a way to reach the node whose SSH host key fingerprint is
     /// `fingerprint`. The fingerprint is the only identity: a node that already
-    /// owns it absorbs the route, otherwise this creates a node for it. The
-    /// address the user typed is just the first endpoint, never a match key.
+    /// owns it absorbs the route, otherwise this creates a node for it. A place
+    /// without a fingerprint (v1 or a deep link) has no identity yet, so when the
+    /// verified endpoint points at it, the place adopts the fingerprint instead
+    /// of showing up twice in the list.
     pub fn add_endpoint(
         &mut self,
         user: impl Into<String>,
@@ -176,6 +178,7 @@ impl AppStore {
         let user = user.into().trim().to_string();
         let address = address.into().trim().to_string();
         let fingerprint = fingerprint.into().trim().to_string();
+        let probe = [address.as_str(), route.host.as_str()];
         if !fingerprint.is_empty()
             && let Some(index) = self
                 .places
@@ -184,10 +187,33 @@ impl AppStore {
         {
             let id = self.places[index].id;
             let before = self.places[index].routes.clone();
-            crate::route::remember(&mut self.places[index].routes, route);
-            if self.places[index].routes != before {
+            let absorbed = self.absorb_unpinned(id, &probe);
+            let changed = match self.places.iter_mut().find(|place| place.id == id) {
+                Some(place) => {
+                    crate::route::remember(&mut place.routes, route);
+                    place.routes != before
+                }
+                None => false,
+            };
+            if absorbed || changed {
                 self.persist();
             }
+            self.select(id);
+            return id;
+        }
+        if !fingerprint.is_empty()
+            && let Some(index) = self.places.iter().position(|place| {
+                place.fingerprint.as_deref().is_none_or(str::is_empty)
+                    && probe.iter().any(|address| place.points_at(address))
+            })
+        {
+            let id = self.places[index].id;
+            self.places[index].fingerprint = Some(fingerprint);
+            self.absorb_unpinned(id, &probe);
+            if let Some(place) = self.places.iter_mut().find(|place| place.id == id) {
+                crate::route::remember(&mut place.routes, route);
+            }
+            self.persist();
             self.select(id);
             return id;
         }
@@ -208,6 +234,31 @@ impl AppStore {
             },
         };
         self.insert_place(place)
+    }
+
+    /// Merge routes from places that have no fingerprint but point at one of
+    /// `addresses` into `target`, then drop them. They are the same node from
+    /// before its fingerprint was known.
+    fn absorb_unpinned(&mut self, target: Uuid, addresses: &[&str]) -> bool {
+        let victims: Vec<(Uuid, Vec<Route>)> = self
+            .places
+            .iter()
+            .filter(|place| place.id != target)
+            .filter(|place| place.fingerprint.as_deref().is_none_or(str::is_empty))
+            .filter(|place| addresses.iter().any(|address| place.points_at(address)))
+            .map(|place| (place.id, place.routes.clone()))
+            .collect();
+        if victims.is_empty() {
+            return false;
+        }
+        if let Some(place) = self.places.iter_mut().find(|place| place.id == target) {
+            for (_, routes) in &victims {
+                crate::route::merge(&mut place.routes, routes.clone());
+            }
+        }
+        let dropped: HashSet<_> = victims.into_iter().map(|(id, _)| id).collect();
+        self.places.retain(|place| !dropped.contains(&place.id));
+        true
     }
 
     fn insert_place(&mut self, place: Place) -> Uuid {
@@ -539,6 +590,7 @@ impl AppStore {
     }
 
     fn apply_places(&mut self, incoming: Vec<Place>, select_first: bool) {
+        let incoming = normalize_places(incoming);
         let incoming_ids: HashSet<_> = incoming.iter().map(|place| place.id).collect();
         self.attaches.retain(|id, _| incoming_ids.contains(id));
         self.progress.retain(|id, _| incoming_ids.contains(id));
@@ -577,6 +629,93 @@ impl AppStore {
 
 fn fixture_places() -> Vec<Place> {
     vec![Place::new(login_name(), "", Backend::Herdr, None)]
+}
+
+/// Keep one place per node. A fingerprint is the identity; a place without one
+/// joins the pinned node that shares an endpoint. Remaining unpinned duplicates
+/// fold by switch key. This heals v1 catalogs and earlier Add runs that kept
+/// the pre-fingerprint place next to the new one.
+fn normalize_places(places: Vec<Place>) -> Vec<Place> {
+    let mut out: Vec<Place> = Vec::new();
+    for place in places {
+        let pinned = place
+            .fingerprint
+            .as_deref()
+            .is_some_and(|pin| !pin.is_empty());
+        if pinned {
+            if let Some(existing) = out
+                .iter_mut()
+                .find(|item| item.fingerprint == place.fingerprint)
+            {
+                fold_place(existing, place);
+                continue;
+            }
+            if let Some(index) = out.iter().position(|item| {
+                item.fingerprint.as_deref().is_none_or(str::is_empty)
+                    && endpoints_overlap(item, &place)
+            }) {
+                // Keep the tab position of the unpinned placeholder, but the
+                // pin owns the node and its route order.
+                let mut placeholder = std::mem::replace(&mut out[index], place);
+                let mut routes = std::mem::take(&mut placeholder.routes);
+                let node = &mut out[index];
+                crate::route::merge(&mut routes, std::mem::take(&mut node.routes));
+                node.routes = routes;
+                adopt_details(node, &placeholder);
+                continue;
+            }
+            out.push(place);
+            continue;
+        }
+        if let Some(existing) = out.iter_mut().find(|item| {
+            item.fingerprint
+                .as_deref()
+                .is_some_and(|pin| !pin.is_empty())
+                && endpoints_overlap(item, &place)
+        }) {
+            fold_place(existing, place);
+            continue;
+        }
+        if let Some(existing) = out.iter_mut().find(|item| {
+            item.fingerprint.as_deref().is_none_or(str::is_empty)
+                && item.switch_key().eq_ignore_ascii_case(&place.switch_key())
+        }) {
+            fold_place(existing, place);
+            continue;
+        }
+        out.push(place);
+    }
+    out
+}
+
+/// Fold a copy of a node into it: the copy's routes are added, and a label,
+/// session, or user that only the copy carries is kept.
+fn fold_place(node: &mut Place, copy: Place) {
+    adopt_details(node, &copy);
+    crate::route::merge(&mut node.routes, copy.routes);
+}
+
+fn adopt_details(node: &mut Place, copy: &Place) {
+    if node.label.as_deref().is_none_or(str::is_empty)
+        && copy.label.as_deref().is_some_and(|label| !label.is_empty())
+    {
+        node.label = copy.label.clone();
+    }
+    if node.session.is_none() {
+        node.session = copy.session.clone();
+    }
+    if node.user.trim().is_empty() {
+        node.user = copy.user.clone();
+    }
+}
+
+fn endpoints_overlap(left: &Place, right: &Place) -> bool {
+    let hosts = left.endpoint_hosts();
+    !hosts.is_empty()
+        && right
+            .endpoint_hosts()
+            .iter()
+            .any(|host| hosts.contains(host))
 }
 
 #[cfg(test)]
@@ -715,6 +854,108 @@ mod tests {
                 .routes
                 .iter()
                 .any(|route| route.host == "riften.local" && route.last)
+        );
+    }
+
+    #[test]
+    fn add_endpoint_completes_an_unpinned_place_with_the_endpoint() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        store.places[0] = Place::new("ada", "riverwood", Backend::Herdr, None);
+        let id = store.places[0].id;
+        let returned = store.add_endpoint(
+            "ada",
+            "riverwood",
+            "SHA256:NODE",
+            Route::direct("riverwood"),
+        );
+        assert_eq!(returned, id);
+        assert_eq!(store.places.len(), 1);
+        let place = store.places.iter().find(|place| place.id == id).unwrap();
+        assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
+        assert_eq!(place.routes.len(), 1);
+    }
+
+    #[test]
+    fn add_endpoint_absorbs_an_unpinned_duplicate_of_the_same_endpoint() {
+        let tmp = Tmp::new();
+        let mut store = store_in(&tmp);
+        let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
+        pinned.fingerprint = Some("SHA256:NODE".into());
+        let mut stale = Place::new("ada", "riverwood", Backend::Herdr, None);
+        stale.routes.push(Route::mdns("riverwood.local"));
+        store.places = vec![pinned.clone(), stale];
+        let id = store.add_endpoint(
+            "ada",
+            "riverwood",
+            "SHA256:NODE",
+            Route::direct("riverwood"),
+        );
+        assert_eq!(id, pinned.id);
+        assert_eq!(store.places.len(), 1);
+        assert!(
+            store.places[0]
+                .routes
+                .iter()
+                .any(|route| route.host == "riverwood.local")
+        );
+    }
+
+    #[test]
+    fn normalize_places_keeps_one_node_per_fingerprint() {
+        let mut first = Place::new("ada", "riverwood", Backend::Herdr, None);
+        first.fingerprint = Some("SHA256:NODE".into());
+        first.routes.push(Route::direct("riverwood"));
+        let mut second = Place::new("ada", "riften", Backend::Herdr, None);
+        second.fingerprint = Some("SHA256:NODE".into());
+        second.routes.push(Route::mdns("riften.local"));
+        let normalized = normalize_places(vec![first.clone(), second]);
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].id, first.id);
+        assert!(
+            normalized[0]
+                .routes
+                .iter()
+                .any(|route| route.host == "riften.local")
+        );
+    }
+
+    #[test]
+    fn normalize_places_drops_the_unpinned_copy_of_a_pinned_node() {
+        let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
+        pinned.fingerprint = Some("SHA256:NODE".into());
+        let stale = Place::new("ada", "riverwood", Backend::Herdr, None);
+        let normalized = normalize_places(vec![stale, pinned.clone()]);
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].id, pinned.id);
+    }
+
+    #[test]
+    fn normalize_places_keeps_the_label_and_session_of_the_older_copy() {
+        let mut stale = Place::new("ada", "riverwood", Backend::Herdr, Some("main".into()));
+        stale.label = Some("Work".into());
+        let mut pinned = Place::new("ada", "riverwood", Backend::Herdr, None);
+        pinned.fingerprint = Some("SHA256:NODE".into());
+        let normalized = normalize_places(vec![stale, pinned]);
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].fingerprint.as_deref(), Some("SHA256:NODE"));
+        assert_eq!(normalized[0].label.as_deref(), Some("Work"));
+        assert_eq!(normalized[0].session.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn normalize_places_folds_unpinned_duplicates() {
+        let first = Place::new("ada", "riverwood", Backend::Herdr, None);
+        let mut second = Place::new("ada", "riverwood", Backend::Herdr, None);
+        second.routes.push(Route::mdns("riverwood.local"));
+        let normalized = normalize_places(vec![first.clone(), second]);
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].id, first.id);
+        assert!(
+            normalized[0]
+                .routes
+                .iter()
+                .any(|route| route.host == "riverwood.local")
         );
     }
 
