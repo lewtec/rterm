@@ -41,7 +41,7 @@ v1 runs on macOS 14 and on Linux. Windows is out of scope. A later release still
 A place is:
 
 - user (optional; empty means the ssh login)
-- host (the first endpoint; empty, a loopback name, or this machine's hostname means local)
+- host (the first endpoint; empty, a loopback name, or this machine's hostname means local; otherwise used verbatim, and it may contain `@`)
 - backend: `herdr`, `tmux`, or `screen`
 - session name: required for `tmux` and `screen`; absent for `herdr`
 - label: optional; replaces the hostname part of the tab name
@@ -61,7 +61,9 @@ The routes are the source of truth for how to reach a node; the endpoint is only
 
 A label replaces only the hostname: label `work` on `user@host:herdr` shows `user@work:herdr`.
 
-Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local.
+Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means `herdr`. A missing host means local. The login is the first `@` component and cannot contain `@`; the host may contain one (ShellHub addresses are `namespace.device@cloud.shellhub.io`), so parse at the first `@`.
+
+The user and the endpoint are separate fields. Never move an `@` from the endpoint into the user: `lucao.whiterun@cloud.shellhub.io` is a whole address, and with user `lucasew` rterm runs `ssh lucasew@lucao.whiterun@cloud.shellhub.io` (`ssh` itself splits at the last `@`).
 
 Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id. The key of a tab is the login, the fingerprint and the access: places with the same login and fingerprint are tabs of one node and differ by backend and session. Another login on the same machine is another tab.
 
@@ -97,7 +99,7 @@ A place remembers the route that worked last (`last = true` on its route). The a
 
 Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>` when the route differs from the place's endpoint, so every route shares one known_hosts identity while an SSH config alias still resolves its own `HostName`. Do not write the user's `known_hosts`.
 
-Add Place asks only for **user** and an **endpoint**. The endpoint may be a hostname, an IP, or an SSH config alias; a login typed as `user@endpoint` moves to the user field instead of staying glued to the address. An empty user means your login. rterm never reads or writes `~/.ssh/config`; the `ssh` it runs resolves an alias the usual way. The SSH host key fingerprint is the node identity. rterm probes the endpoint once, reads its host key, and adds the endpoint to the node that already owns that fingerprint, on every tab of it; when no node owns it, rterm creates one tab with that fingerprint and the endpoint. The endpoint is never a match key, so the same node reached through another address joins the existing tabs. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
+Add Place asks only for **user** and an **endpoint**. The endpoint may be a hostname, an IP, an SSH config alias, or an SSH address; it is kept verbatim, and an `@` inside it stays in the address. An empty user means your login. rterm never reads or writes `~/.ssh/config`; the `ssh` it runs resolves an alias the usual way. The SSH host key fingerprint is the node identity. rterm probes the endpoint once, reads its host key, and adds the endpoint to the node that already owns that fingerprint, on every tab of it; when no node owns it, rterm creates one tab with that fingerprint and the endpoint. The endpoint is never a match key, so the same node reached through another address joins the existing tabs. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
 
 **New session** in the tab menu opens another access to the node the tab belongs to: another backend or tmux/screen session name, sharing fingerprint, user, and routes. Choosing an access that already exists focuses its tab instead of duplicating it.
 

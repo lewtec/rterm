@@ -11,7 +11,9 @@ pub struct Place {
     pub id: Uuid,
     pub user: String,
     /// The first endpoint the user typed: the tab label and the default
-    /// address. Not the node identity — `fingerprint` is.
+    /// address. Not the node identity — `fingerprint` is. The address is used
+    /// verbatim and may itself contain `@` (ShellHub's `device@gateway`); the
+    /// login is only `user`.
     pub host: String,
     pub backend: Backend,
     pub session: Option<String>,
@@ -134,7 +136,6 @@ impl Place {
             .map(|route| route.host.trim())
             .filter(|host| !host.is_empty())
             .unwrap_or_else(|| self.host.trim());
-        let (_, host) = Self::split_endpoint(host);
         host.trim().trim_end_matches('.').to_string()
     }
 
@@ -172,20 +173,6 @@ impl Place {
         !address.is_empty() && self.endpoint_hosts().iter().any(|host| host == &address)
     }
 
-    /// `user@endpoint` names the login and the address in one field. Returns the
-    /// login only when the text carries one; the address never keeps it.
-    pub fn split_endpoint(address: &str) -> (Option<String>, String) {
-        let address = address.trim();
-        if let Some((user, host)) = address.rsplit_once('@') {
-            let user = user.trim();
-            let host = host.trim();
-            if !user.is_empty() && !host.is_empty() && !user.contains('@') {
-                return (Some(user.to_string()), host.to_string());
-            }
-        }
-        (None, address.to_string())
-    }
-
     pub fn matches_switch_key(&self, key: &str) -> bool {
         let needle = key.trim();
         if needle.is_empty() {
@@ -217,7 +204,10 @@ impl Place {
         {
             return None;
         }
-        let (user, host) = if let Some(at) = text.rfind('@') {
+        // The login cannot contain `@`, but the host can: ShellHub wants
+        // `login@namespace.device@gateway`. Split at the first `@` so the host
+        // keeps its own `@`.
+        let (user, host) = if let Some(at) = text.find('@') {
             let user = text[..at].trim().to_string();
             let host = text[at + 1..].trim().to_string();
             (user, host)
@@ -403,5 +393,27 @@ mod tests {
             place.display_label(),
             format!("{}@riverwood:herdr", login_name())
         );
+    }
+
+    #[test]
+    fn shellhub_address_keeps_its_at_and_the_login() {
+        let place = Place::new(
+            "lucasew",
+            "lucao.whiterun@cloud.shellhub.io",
+            Backend::Herdr,
+            None,
+        );
+        assert_eq!(place.hostname(), "lucao.whiterun@cloud.shellhub.io");
+        assert_eq!(
+            place.display_label(),
+            "lucasew@lucao.whiterun@cloud.shellhub.io:herdr"
+        );
+        assert_eq!(
+            place.switch_key(),
+            "lucasew@lucao.whiterun@cloud.shellhub.io:herdr"
+        );
+        let parsed = Place::parse_switch_key(&place.switch_key()).unwrap();
+        assert_eq!(parsed.user, "lucasew");
+        assert_eq!(parsed.host, "lucao.whiterun@cloud.shellhub.io");
     }
 }

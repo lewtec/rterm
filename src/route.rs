@@ -184,10 +184,11 @@ pub fn same_route(left: &Route, right: &Route) -> bool {
 }
 
 /// `whiterun` becomes `whiterun.local`. A FQDN uses its first label; addresses
-/// are not mDNS names.
+/// are not mDNS names. An SSH address with `@` is a ShellHub-style target, not
+/// a LAN host, so it never becomes a `.local` guess.
 pub fn mdns_name(host: &str) -> Option<String> {
     let host = trim_host(host);
-    if host.is_empty() || host.parse::<std::net::IpAddr>().is_ok() {
+    if host.is_empty() || host.contains('@') || host.parse::<std::net::IpAddr>().is_ok() {
         return None;
     }
     let short = host.split('.').next().unwrap_or(&host);
@@ -440,6 +441,7 @@ mod tests {
         assert_eq!(mdns_name("riverwood.local"), None);
         assert_eq!(mdns_name("192.168.1.7"), None);
         assert_eq!(mdns_name("fd7a::1"), None);
+        assert_eq!(mdns_name("lucao.whiterun@cloud.shellhub.io"), None);
     }
 
     #[test]

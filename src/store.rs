@@ -179,11 +179,9 @@ impl AppStore {
         let user = user.into().trim().to_string();
         let address = address.into().trim().to_string();
         let fingerprint = fingerprint.into().trim().to_string();
-        // A login typed in the endpoint is the explicit one; it must not leave a
-        // second user glued to the host.
-        let (endpoint_user, address) = Place::split_endpoint(&address);
-        let user = endpoint_user.unwrap_or(user);
-        let address = address.trim().to_string();
+        // The user is its own field and the endpoint is used verbatim. The
+        // endpoint may contain `@` that is not a login (ShellHub addresses are
+        // `namespace.device@gateway`), so never move it into the user.
         let probe = [address.as_str(), route.host.as_str()];
         if !fingerprint.is_empty() {
             let login = if user.trim().is_empty() {
@@ -469,13 +467,11 @@ impl AppStore {
         let Some(mut draft) = self.editor.clone() else {
             return;
         };
+        // The user and the endpoint are separate fields. Do not split `@` out
+        // of the endpoint: ShellHub addresses are `namespace.device@gateway`
+        // and the login that goes in front is the user field.
         draft.host = draft.host.trim().to_string();
         draft.user = draft.user.trim().to_string();
-        let (endpoint_user, host) = Place::split_endpoint(&draft.host);
-        if let Some(user) = endpoint_user {
-            draft.user = user;
-        }
-        draft.host = host;
         if Place::is_loopback_host(&draft.host) {
             draft.host.clear();
             if draft.user.is_empty() {
@@ -868,7 +864,6 @@ fn fixture_places() -> Vec<Place> {
 fn normalize_places(places: Vec<Place>) -> Vec<Place> {
     let mut places = places;
     for place in &mut places {
-        adopt_endpoint_user(place);
         if place.backend == Backend::Herdr {
             // Herdr names no session; an old record may still carry one.
             place.session = None;
@@ -957,17 +952,6 @@ fn same_node(left: &Place, right: &Place) -> bool {
                 && (left_hosts.is_empty() && right_hosts.is_empty()
                     || left_hosts.iter().any(|host| right_hosts.contains(host)))
         }
-    }
-}
-
-/// A login typed inside the endpoint (`user@host`) moves to the user field. Old
-/// catalogs and pasted endpoints carry it in the host, where it only duplicates
-/// the login and breaks the address.
-fn adopt_endpoint_user(place: &mut Place) {
-    let (user, host) = Place::split_endpoint(&place.host);
-    if let Some(user) = user {
-        place.user = user;
-        place.host = host;
     }
 }
 
@@ -1398,31 +1382,39 @@ mod tests {
     }
 
     #[test]
-    fn add_endpoint_moves_a_login_typed_in_the_endpoint() {
+    fn add_endpoint_keeps_the_at_of_a_shellhub_address() {
         let tmp = Tmp::new();
         let mut store = store_in(&tmp);
         let id = store.add_endpoint(
-            "",
+            "lucasew",
             "lucao.whiterun@cloud.shellhub.io",
             "SHA256:NODE",
-            Route::direct("cloud.shellhub.io"),
+            Route::direct("lucao.whiterun@cloud.shellhub.io"),
         );
         let place = store.places.iter().find(|place| place.id == id).unwrap();
-        assert_eq!(place.user, "lucao.whiterun");
-        assert_eq!(place.host, "cloud.shellhub.io");
+        assert_eq!(place.user, "lucasew");
+        assert_eq!(place.host, "lucao.whiterun@cloud.shellhub.io");
+        assert_eq!(
+            crate::driver::ssh_target(place),
+            "lucasew@lucao.whiterun@cloud.shellhub.io"
+        );
+        assert_eq!(
+            place.display_label(),
+            "lucasew@lucao.whiterun@cloud.shellhub.io:herdr"
+        );
     }
 
     #[test]
-    fn normalize_places_moves_the_login_out_of_the_host() {
+    fn normalize_places_keeps_the_at_of_the_address() {
         let place = Place::new(
-            "lucao",
+            "lucasew",
             "lucao.whiterun@cloud.shellhub.io",
             Backend::Herdr,
             None,
         );
         let normalized = normalize_places(vec![place]);
-        assert_eq!(normalized[0].user, "lucao.whiterun");
-        assert_eq!(normalized[0].host, "cloud.shellhub.io");
+        assert_eq!(normalized[0].user, "lucasew");
+        assert_eq!(normalized[0].host, "lucao.whiterun@cloud.shellhub.io");
     }
 
     #[test]
