@@ -5,10 +5,15 @@ use crate::place::Place;
 use crate::route::{Route, RouteKind};
 use crate::uuidv7::uuid_upper;
 
-pub const CURRENT_VERSION: i64 = 2;
+/// Version 3 has no endpoint field: the first route is the endpoint, so the
+/// route list is the whole truth about where a place is.
+pub const CURRENT_VERSION: i64 = 3;
 /// Files written before routes existed. They decode into a place with only the
 /// host route and no pin.
 pub const LEGACY_VERSION: i64 = 1;
+/// Files that still carry a `host` next to the route list. The host becomes the
+/// first route on decode.
+pub const ROUTES_VERSION: i64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogDocument {
@@ -155,7 +160,7 @@ pub fn decode(text: &str) -> Result<CatalogDocument, CatalogError> {
         places.push(partial.finish(current_start)?);
     }
     let resolved = version.unwrap_or(0);
-    if resolved != CURRENT_VERSION && resolved != LEGACY_VERSION {
+    if !(LEGACY_VERSION..=CURRENT_VERSION).contains(&resolved) {
         return Err(CatalogError::UnsupportedVersion(resolved));
     }
     Ok(CatalogDocument {
@@ -186,9 +191,6 @@ pub fn encode(document: &CatalogDocument) -> String {
         lines.push(format!("id = {}", quote(&uuid_upper(place.id))));
         if !place.user.is_empty() {
             lines.push(format!("user = {}", quote(&place.user)));
-        }
-        if !Place::is_loopback_host(&place.host) && !place.host.is_empty() {
-            lines.push(format!("host = {}", quote(&place.host)));
         }
         lines.push(format!("backend = {}", quote(place.backend.as_str())));
         if place.backend != Backend::Herdr
@@ -343,20 +345,29 @@ impl PartialPlace {
         let backend = self
             .backend
             .ok_or_else(|| CatalogError::MissingField("backend".into(), line))?;
-        let mut host = self.host.unwrap_or_default().trim().to_string();
+        let host = self.host.map(|value| value.trim().to_string());
         let user = self.user.unwrap_or_default().trim().to_string();
-        // Routes are the truth. A file that only lists routes still names the
-        // node, and the first route stands in for the missing endpoint.
-        let routes = self.routes;
-        if host.is_empty() {
-            host = routes
-                .iter()
-                .find(|route| !route.host.trim().is_empty())
-                .map(|route| route.host.trim().to_string())
-                .unwrap_or_default();
-        }
-        if Place::is_loopback_host(&host) {
-            host.clear();
+        // Routes are the truth. Version 3 has no host; in v1 and v2 the host
+        // was the endpoint, so it becomes the first route.
+        let mut routes = self.routes;
+        if let Some(host) = host {
+            if Place::is_local_host(&host) {
+                routes.clear();
+            } else {
+                // Keep the matching route (its `last` mark and any port) and
+                // move it to the front: it is the endpoint the user typed.
+                let endpoint = routes.iter().position(|route| {
+                    route.kind == RouteKind::Direct
+                        && route.host.trim().eq_ignore_ascii_case(host.trim())
+                });
+                match endpoint {
+                    Some(index) => {
+                        let route = routes.remove(index);
+                        routes.insert(0, route);
+                    }
+                    None => routes.insert(0, Route::direct(host)),
+                }
+            }
         }
         let session = self.session.map(|value| value.trim().to_string());
         if backend != Backend::Herdr && session.as_ref().is_none_or(|value| value.is_empty()) {
@@ -370,11 +381,10 @@ impl PartialPlace {
             .fingerprint
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        let local = host.is_empty();
+        let local = routes.is_empty();
         Ok(Place {
             id,
             user,
-            host,
             backend,
             session: if backend == Backend::Herdr {
                 None
@@ -453,21 +463,19 @@ mod tests {
             Place {
                 id: id("11111111-1111-1111-1111-111111111111"),
                 user: "ada".into(),
-                host: "riverwood".into(),
                 backend: Backend::Herdr,
                 session: None,
                 label: None,
-                routes: Vec::new(),
+                routes: vec![Route::direct("riverwood")],
                 fingerprint: None,
             },
             Place {
                 id: id("22222222-2222-2222-2222-222222222222"),
                 user: "ada".into(),
-                host: "remote.example".into(),
                 backend: Backend::Tmux,
                 session: Some("foo".into()),
                 label: Some("work".into()),
-                routes: Vec::new(),
+                routes: vec![Route::direct("remote.example")],
                 fingerprint: None,
             },
         ];
@@ -476,7 +484,7 @@ mod tests {
             places: places.clone(),
         });
         let decoded = decode(&encoded).unwrap();
-        assert_eq!(decoded.version, 2);
+        assert_eq!(decoded.version, CURRENT_VERSION);
         assert_eq!(decoded.places, places);
         let herdr_only = encode(&CatalogDocument {
             version: 1,
@@ -526,11 +534,10 @@ mod tests {
         let place = Place {
             id: id("11111111-1111-1111-1111-111111111111"),
             user: "a\"b".into(),
-            host: "host".into(),
             backend: Backend::Screen,
             session: Some("s".into()),
             label: Some("line\nbreak".into()),
-            routes: Vec::new(),
+            routes: vec![Route::direct("host")],
             fingerprint: None,
         };
         let decoded = decode(&encode(&CatalogDocument {
@@ -546,7 +553,6 @@ mod tests {
         let place = Place {
             id: id("11111111-1111-1111-1111-111111111111"),
             user: String::new(),
-            host: String::new(),
             backend: Backend::Herdr,
             session: None,
             label: None,
@@ -562,7 +568,7 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert!(decoded.places[0].is_local());
         assert_eq!(decoded.places[0].user, "");
-        assert_eq!(decoded.places[0].host, "");
+        assert_eq!(decoded.places[0].endpoint_host(), "");
     }
 
     #[test]
@@ -579,7 +585,7 @@ mod tests {
         "#,
         );
         let decoded = decode(&text).unwrap();
-        assert_eq!(decoded.places[0].host, "");
+        assert_eq!(decoded.places[0].endpoint_host(), "");
         assert_eq!(decoded.places[0].user, "ada");
         assert!(decoded.places[0].is_local());
         let encoded = encode(&decoded);
@@ -601,7 +607,7 @@ mod tests {
         );
         let decoded = decode(&text).unwrap();
         assert_eq!(decoded.places[0].user, "");
-        assert_eq!(decoded.places[0].host, "riverwood");
+        assert_eq!(decoded.places[0].endpoint_host(), "riverwood");
         assert_eq!(
             Place::parse_switch_key("riverwood:herdr")
                 .unwrap()
@@ -631,7 +637,7 @@ mod tests {
         "#,
         );
         let decoded = decode(&text).unwrap();
-        assert_eq!(decoded.places[0].host, "riverwood");
+        assert_eq!(decoded.places[0].endpoint_host(), "riverwood");
         assert_eq!(decoded.places[0].routes.len(), 2);
     }
 
@@ -640,7 +646,6 @@ mod tests {
         let place = Place {
             id: id("11111111-1111-1111-1111-111111111111"),
             user: "ada".into(),
-            host: "whiterun".into(),
             backend: Backend::Herdr,
             session: None,
             label: None,
@@ -668,7 +673,7 @@ mod tests {
     }
 
     #[test]
-    fn version_one_place_has_no_routes_or_pin() {
+    fn version_one_host_becomes_the_first_route() {
         let text = swift(
             r#"
         version = 1
@@ -676,15 +681,59 @@ mod tests {
         [[place]]
         id = "11111111-1111-1111-1111-111111111111"
         user = "ada"
-        host = "whiterun"
+        host = "whiterun.example"
         backend = "herdr"
         "#,
         );
         let decoded = decode(&text).unwrap();
         assert_eq!(decoded.version, 1);
-        assert!(decoded.places[0].routes.is_empty());
+        assert_eq!(decoded.places[0].endpoint_host(), "whiterun.example");
+        assert_eq!(decoded.places[0].routes.len(), 1);
         assert!(decoded.places[0].fingerprint.is_none());
-        assert!(encode(&decoded).contains("version = 2"));
+        let encoded = encode(&decoded);
+        assert!(encoded.contains(&format!("version = {CURRENT_VERSION}")));
+        // No place-level host: the endpoint lives in the route list.
+        assert!(
+            !encoded
+                .lines()
+                .take_while(|line| !line.starts_with("[[place.route]]"))
+                .any(|line| line.starts_with("host = "))
+        );
+    }
+
+    #[test]
+    fn legacy_host_reuses_the_matching_route_and_its_last_mark() {
+        let text = swift(
+            r#"
+        version = 2
+
+        [[place]]
+        id = "11111111-1111-1111-1111-111111111111"
+        user = "ada"
+        host = "riverwood"
+        backend = "herdr"
+
+        [[place.route]]
+        kind = "tailscale"
+        host = "100.64.0.7"
+
+        [[place.route]]
+        kind = "direct"
+        host = "riverwood"
+        last = true
+
+        [[place.route]]
+        kind = "mdns"
+        host = "riverwood.local"
+        "#,
+        );
+        let decoded = decode(&text).unwrap();
+        let place = &decoded.places[0];
+        assert_eq!(place.endpoint_host(), "riverwood");
+        assert_eq!(place.routes[0].kind, RouteKind::Direct);
+        assert!(place.routes[0].last);
+        assert_eq!(place.routes.len(), 3);
+        assert!(place.routes.iter().any(|route| route.host == "100.64.0.7"));
     }
 
     #[test]
@@ -735,8 +784,8 @@ mod tests {
     #[test]
     fn rejects_unknown_version() {
         assert_eq!(
-            decode("version = 3\n").unwrap_err(),
-            CatalogError::UnsupportedVersion(3)
+            decode("version = 4\n").unwrap_err(),
+            CatalogError::UnsupportedVersion(4)
         );
     }
 }

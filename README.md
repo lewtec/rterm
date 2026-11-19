@@ -14,21 +14,25 @@ Each tab is a **place**: a saved attach target. Click a tab to attach. Sleep dro
 
 ## Places
 
-A place is user, host, backend (`herdr`, `tmux`, or `screen`), and a session name for tmux and screen. One node may be open through several accesses: a Herdr tab, a tmux session `dev`, another `ops`. Each is its own tab, and they share the node's fingerprint, user, and endpoints. The duplicate key is user + fingerprint + access, so another login on the same machine is another tab, not a duplicate.
+A place is user, routes, backend (`herdr`, `tmux`, or `screen`), and a session name for tmux and screen. One node may be open through several accesses: a Herdr tab, a tmux session `dev`, another `ops`. Each is its own tab, and they share the node's fingerprint, user, and routes. The duplicate key is user + fingerprint + access, so another login on the same machine is another tab, not a duplicate.
 
-A node names one machine and pins its SSH host key fingerprint. It may have several routes: a saved host, `<name>.local` (mDNS), or a Tailscale MagicDNS name or IP. Reconnecting tries the route that worked last; when it fails, the pane lists the other ways in and the one you pick becomes the last route. **Reconnect as** in the tab menu lists every endpoint and marks the one in use. **New session** in the same menu, or ⌘N, opens another access to the node you are on; it lists the accesses already open there and suggests a backend that is not in use yet. The first verified route on an unpinned place teaches the fingerprint.
+A node names one machine and pins its SSH host key fingerprint. It may have several routes: the endpoint you typed, `<name>.local` (mDNS), or a Tailscale MagicDNS name or IP. Routes are the whole truth; the first one is the typed endpoint, and a place with no routes is this machine. Reconnecting tries the route that worked last; when it fails, the pane lists the other ways in and the one you pick becomes the last route. **Reconnect as** in the tab menu lists every endpoint and marks the one in use. **New session** in the same menu, or ⌘N, opens another access to the node you are on; it lists the accesses already open there and suggests a backend that is not in use yet. The first verified route on an unpinned place teaches the fingerprint.
 
 The catalog is `~/Documents/rterm/*.rterm-place`. The app writes it. Edits on disk reload. Use **+** or **Place → Add Place…**. Add Place asks only for **user** and an **endpoint** (hostname, IP, SSH alias, or an SSH address). The user is optional: empty uses your login. The endpoint is used verbatim, so an address that needs its own `@` (ShellHub's `namespace.device@cloud.shellhub.io`) keeps it and the user field adds the login in front. rterm never reads or writes `~/.ssh/config`; when the endpoint is an ssh alias, the `ssh` rterm runs resolves it as usual. The SSH host key fingerprint identifies the node; the endpoint is just one way to reach it. rterm connects once, reads the host key, and adds the endpoint to the node that owns that fingerprint, creating a tab only when no node has it yet. The same node reached through another address becomes another endpoint on the existing tabs, not a duplicate. A place from a v1 catalog has no fingerprint yet, so the verified endpoint completes it instead of adding a second tab. Editing a place keeps the full form with a **Find routes** button, and it edits that tab's access, not the node's identity.
 
 ```toml
-version = 2
+version = 3
 
 [[place]]
 id = "0192F3C1-7A4E-7C3A-9B2D-1F0A2B3C4D5E"
 user = "ada"
-host = "whiterun"
 backend = "herdr"
 fingerprint = "SHA256:C8olMcLxERkizT4dlzO1z85UVxdq/COQVR0T3I9IEK8"
+
+[[place.route]]
+kind = "direct"
+host = "whiterun"
+last = true
 
 [[place.route]]
 kind = "mdns"
@@ -37,10 +41,11 @@ host = "whiterun.local"
 [[place.route]]
 kind = "tailscale"
 host = "whiterun.tailnet.ts.net"
-last = true
 ```
 
-- Empty host, `localhost`, or `127.0.0.1` is this machine. No SSH. Label: `you@localhost:herdr`.
+There is no `host` field. A v1 or v2 catalog's `host` is read as the first route; the next save writes version 3 without it.
+
+- No routes, `localhost`, or `127.0.0.1` is this machine. No SSH. Label: `you@localhost:herdr`.
 - A real host uses `/usr/bin/ssh`. Label: `user@hostname:herdr` or `user@hostname:tmux(foo)`. The hostname is the route in use; a label replaces it, so label `work` shows `user@work:herdr`.
 
 herdr attach uses the binary that owns `herdr.sock` on that machine. PATH `herdr` can be a different version.

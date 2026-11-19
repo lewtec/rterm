@@ -93,10 +93,7 @@ mod tests {
         let places: Vec<_> = (0..4).map(|index| place(&format!("h{index}"))).collect();
         let (leading, trailing) = split(&places, f64::INFINITY, |_| 80.0, 2.0);
         assert_eq!(
-            leading
-                .iter()
-                .map(|place| place.host.as_str())
-                .collect::<Vec<_>>(),
+            leading.iter().map(Place::endpoint_host).collect::<Vec<_>>(),
             ["h0", "h1", "h2", "h3"]
         );
         assert!(trailing.is_empty());
@@ -107,16 +104,13 @@ mod tests {
         let places: Vec<_> = (0..4).map(|index| place(&format!("h{index}"))).collect();
         let (leading, trailing) = split(&places, 110.0, |_| 50.0, 2.0);
         assert_eq!(
-            leading
-                .iter()
-                .map(|place| place.host.as_str())
-                .collect::<Vec<_>>(),
+            leading.iter().map(Place::endpoint_host).collect::<Vec<_>>(),
             ["h0", "h1"]
         );
         assert_eq!(
             trailing
                 .iter()
-                .map(|place| place.host.as_str())
+                .map(Place::endpoint_host)
                 .collect::<Vec<_>>(),
             ["h2", "h3"]
         );
@@ -126,8 +120,8 @@ mod tests {
     fn first_place_stays_left_when_wider_than_the_cap() {
         let places = vec![place("wide"), place("next")];
         let (leading, trailing) = split(&places, 10.0, |_| 50.0, 2.0);
-        assert_eq!(leading[0].host, "wide");
-        assert_eq!(trailing[0].host, "next");
+        assert_eq!(leading[0].endpoint_host(), "wide");
+        assert_eq!(trailing[0].endpoint_host(), "next");
     }
 
     #[test]

@@ -254,11 +254,10 @@ mod tests {
         let place = Place {
             id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
             user: "ada".into(),
-            host: "riverwood".into(),
             backend: Backend::Herdr,
             session: None,
             label: None,
-            routes: Vec::new(),
+            routes: vec![crate::route::Route::direct("riverwood")],
             fingerprint: None,
         };
         std::fs::write(
