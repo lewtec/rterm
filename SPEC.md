@@ -95,7 +95,7 @@ A place remembers the route that worked last (`last = true` on its route). The a
 
 Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>`, so every route shares one known_hosts identity. Do not write the user's `known_hosts`.
 
-Add Place asks only for **user** and **host**. rterm probes the host once and reads its SSH host key. The fingerprint is the node identity: if a place already owns it, the host becomes another route on that place; otherwise rterm creates the place with that fingerprint and the route. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
+Add Place asks only for **user** and an **endpoint**. The SSH host key fingerprint is the node identity. rterm probes the endpoint once, reads its host key, and adds the endpoint to the place that already owns that fingerprint; when no place owns it, rterm creates one with that fingerprint and the endpoint. The endpoint is never a match key, so the same node reached through another address joins the existing place. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
 
 A place that already has its pin is never asked to confirm it again. A route that presents another key is another node and is never attached.
 

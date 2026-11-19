@@ -10,14 +10,16 @@ use crate::route::Route;
 pub struct Place {
     pub id: Uuid,
     pub user: String,
+    /// The first endpoint the user typed: the tab label and the default
+    /// address. Not the node identity — `fingerprint` is.
     pub host: String,
     pub backend: Backend,
     pub session: Option<String>,
     pub label: Option<String>,
-    /// Alternatives to reach this node. The host field is tried as well.
+    /// More endpoints that reach the same node. `host` is tried as well.
     pub routes: Vec<Route>,
-    /// Pinned SSH host key fingerprint (`SHA256:...`). Empty means learn on
-    /// the first successful attach.
+    /// Pinned SSH host key fingerprint (`SHA256:...`). This is the node
+    /// identity. Empty means learn on the first successful attach.
     pub fingerprint: Option<String>,
 }
 

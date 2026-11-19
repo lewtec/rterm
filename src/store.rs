@@ -163,51 +163,40 @@ impl AppStore {
     }
 
     /// Add `route` as a way to reach the node whose SSH host key fingerprint is
-    /// `fingerprint`. A node that already owns the fingerprint absorbs the
-    /// route; otherwise this creates a node for it. Places loaded from v1 have
-    /// no fingerprint yet, so the matching host adopts the learned one.
+    /// `fingerprint`. The fingerprint is the only identity: a node that already
+    /// owns it absorbs the route, otherwise this creates a node for it. The
+    /// address the user typed is just the first endpoint, never a match key.
     pub fn add_endpoint(
         &mut self,
         user: impl Into<String>,
-        host: impl Into<String>,
+        address: impl Into<String>,
         fingerprint: impl Into<String>,
         route: Route,
     ) -> Uuid {
         let user = user.into().trim().to_string();
-        let host = host.into().trim().to_string();
+        let address = address.into().trim().to_string();
         let fingerprint = fingerprint.into().trim().to_string();
-        if !fingerprint.is_empty() {
-            if let Some(index) = self
+        if !fingerprint.is_empty()
+            && let Some(index) = self
                 .places
                 .iter()
                 .position(|place| place.fingerprint.as_deref() == Some(fingerprint.as_str()))
-            {
-                let id = self.places[index].id;
-                let before = self.places[index].routes.clone();
-                crate::route::remember(&mut self.places[index].routes, route);
-                if self.places[index].routes != before {
-                    self.persist();
-                }
-                self.select(id);
-                return id;
-            }
-            if let Some(index) = self.places.iter().position(|place| {
-                place.fingerprint.as_deref().is_none_or(str::is_empty) && place.host == host
-            }) {
-                self.places[index].fingerprint = Some(fingerprint);
-                crate::route::remember(&mut self.places[index].routes, route);
-                let id = self.places[index].id;
+        {
+            let id = self.places[index].id;
+            let before = self.places[index].routes.clone();
+            crate::route::remember(&mut self.places[index].routes, route);
+            if self.places[index].routes != before {
                 self.persist();
-                self.select(id);
-                return id;
             }
+            self.select(id);
+            return id;
         }
         let mut routes = Vec::new();
         crate::route::remember(&mut routes, route);
         let place = Place {
             id: Uuid::new_v4(),
             user,
-            host,
+            host: address,
             backend: Backend::Herdr,
             session: None,
             label: None,
@@ -727,23 +716,6 @@ mod tests {
                 .iter()
                 .any(|route| route.host == "riften.local" && route.last)
         );
-    }
-
-    #[test]
-    fn add_endpoint_teaches_an_unpinned_place_its_fingerprint() {
-        let tmp = Tmp::new();
-        let mut store = store_in(&tmp);
-        store.places[0] = Place::new("ada", "riverwood", Backend::Herdr, None);
-        let id = store.places[0].id;
-        store.add_endpoint(
-            "ada",
-            "riverwood",
-            "SHA256:NODE",
-            Route::direct("riverwood"),
-        );
-        let place = store.places.iter().find(|place| place.id == id).unwrap();
-        assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
-        assert_eq!(place.routes.len(), 1);
     }
 
     #[test]
