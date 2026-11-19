@@ -152,7 +152,6 @@ impl AppStore {
         let place = Place {
             id: Uuid::new_v4(),
             user,
-            host: String::new(),
             backend: Backend::Herdr,
             session: None,
             label: None,
@@ -214,7 +213,9 @@ impl AppStore {
                 return chosen;
             }
         }
+        // The first route is the endpoint the user typed.
         let mut routes = Vec::new();
+        crate::route::push_unique(&mut routes, Route::direct(address));
         // Another login is another key, not another machine: it sees the same
         // endpoints.
         if !fingerprint.is_empty() {
@@ -225,12 +226,9 @@ impl AppStore {
             }
         }
         crate::route::remember(&mut routes, route);
-        // The typed endpoint is a route too, so the route list is the truth.
-        crate::route::push_unique(&mut routes, Route::direct(address.clone()));
         let place = Place {
             id: Uuid::new_v4(),
             user,
-            host: address,
             backend: Backend::Herdr,
             session: None,
             label: None,
@@ -276,7 +274,6 @@ impl AppStore {
         let place = Place {
             id: Uuid::new_v4(),
             user: origin.user.clone(),
-            host: origin.host.clone(),
             backend,
             session,
             label: None,
@@ -454,7 +451,7 @@ impl AppStore {
         self.editor = Some(PlaceEditorState {
             origin_id: Some(place.id),
             user: place.user.clone(),
-            host: place.host.clone(),
+            host: place.endpoint_host(),
             backend: place.backend,
             session: place.session.clone().unwrap_or_default(),
             label: place.label.clone().unwrap_or_default(),
@@ -472,7 +469,8 @@ impl AppStore {
         // and the login that goes in front is the user field.
         draft.host = draft.host.trim().to_string();
         draft.user = draft.user.trim().to_string();
-        if Place::is_loopback_host(&draft.host) {
+        let local = Place::is_local_host(&draft.host);
+        if local {
             draft.host.clear();
             if draft.user.is_empty() {
                 draft.user = login_name();
@@ -489,18 +487,32 @@ impl AppStore {
             Some(draft.session.trim().to_string())
         };
         let label = draft.label.trim().to_string();
-        let local = Place::is_loopback_host(&draft.host);
+        // The list is the whole truth: the endpoint the user typed is the first
+        // route. Editing the endpoint replaces the mark of the route in use;
+        // keeping it keeps whatever route worked last.
+        let previous_endpoint = draft
+            .origin_id
+            .and_then(|id| self.places.iter().find(|place| place.id == id))
+            .map(Place::endpoint_host)
+            .unwrap_or_default();
+        let endpoint_changed = !local
+            && !previous_endpoint.is_empty()
+            && !draft.host.eq_ignore_ascii_case(&previous_endpoint);
         let mut routes = Vec::new();
         if !local {
+            crate::route::push_unique(&mut routes, Route::direct(draft.host.clone()));
             for route in draft.routes {
                 let route = route.normalized();
-                if !route.host.is_empty() {
-                    crate::route::push_unique(&mut routes, route);
+                crate::route::merge(&mut routes, [route]);
+            }
+            if endpoint_changed || !routes.iter().any(|route| route.last) {
+                for route in &mut routes {
+                    route.last = false;
+                }
+                if let Some(endpoint) = routes.first_mut() {
+                    endpoint.last = true;
                 }
             }
-            // The endpoint is just a route; keep it in the list so the list is
-            // the whole truth.
-            crate::route::push_unique(&mut routes, Route::direct(draft.host.clone()));
         }
         let fingerprint = if local {
             None
@@ -511,7 +523,6 @@ impl AppStore {
         let place = Place {
             id: draft.origin_id.unwrap_or_else(Uuid::new_v4),
             user: draft.user,
-            host: draft.host,
             backend: draft.backend,
             session,
             label: if label.is_empty() { None } else { Some(label) },
@@ -1079,15 +1090,16 @@ mod tests {
         assert_eq!(store.places.len(), count + 1);
         assert_eq!(store.selected_id, Some(id));
         let place = store.places.iter().find(|place| place.id == id).unwrap();
-        assert_eq!(place.host, "riverwood");
+        assert_eq!(place.endpoint_host(), "riverwood");
         assert_eq!(place.fingerprint.as_deref(), Some("SHA256:NODE"));
-        // The probed route, marked last, and the typed endpoint as another route.
+        // The typed endpoint is the first route and the probed one is marked
+        // last, because routes are the whole truth about where the place is.
         assert_eq!(place.routes.len(), 2);
-        assert!(place.routes[0].last);
-        assert_eq!(place.routes[0].host, "riverwood.local");
-        assert!(place.routes.iter().any(
-            |route| route.host == "riverwood" && route.kind == crate::route::RouteKind::Direct
-        ));
+        assert_eq!(place.routes[0].host, "riverwood");
+        assert_eq!(place.routes[0].kind, crate::route::RouteKind::Direct);
+        assert!(!place.routes[0].last);
+        assert_eq!(place.routes[1].host, "riverwood.local");
+        assert!(place.routes[1].last);
     }
 
     #[test]
@@ -1393,7 +1405,7 @@ mod tests {
         );
         let place = store.places.iter().find(|place| place.id == id).unwrap();
         assert_eq!(place.user, "lucasew");
-        assert_eq!(place.host, "lucao.whiterun@cloud.shellhub.io");
+        assert_eq!(place.endpoint_host(), "lucao.whiterun@cloud.shellhub.io");
         assert_eq!(
             crate::driver::ssh_target(place),
             "lucasew@lucao.whiterun@cloud.shellhub.io"
@@ -1414,7 +1426,10 @@ mod tests {
         );
         let normalized = normalize_places(vec![place]);
         assert_eq!(normalized[0].user, "lucasew");
-        assert_eq!(normalized[0].host, "lucao.whiterun@cloud.shellhub.io");
+        assert_eq!(
+            normalized[0].endpoint_host(),
+            "lucao.whiterun@cloud.shellhub.io"
+        );
     }
 
     #[test]
@@ -1529,7 +1544,13 @@ mod tests {
         let saved = store.places.last().unwrap().clone();
         assert_eq!(
             saved.routes,
-            vec![Route::mdns("riverwood.local"), Route::direct("riverwood"),]
+            vec![
+                Route {
+                    last: true,
+                    ..Route::direct("riverwood")
+                },
+                Route::mdns("riverwood.local"),
+            ]
         );
         assert_eq!(
             saved.fingerprint.as_deref(),

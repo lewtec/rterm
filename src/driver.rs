@@ -93,7 +93,8 @@ pub fn known_hosts_path(place: &Place) -> PathBuf {
 /// defeat an SSH config alias (`Host shellhub` / `HostName cloud.shellhub.io`).
 pub fn route_options(place: &Place, route: &Route) -> Vec<String> {
     let mut options = Vec::new();
-    if !route.host.eq_ignore_ascii_case(place.host.trim()) {
+    let endpoint = place.endpoint_host();
+    if !route.host.eq_ignore_ascii_case(&endpoint) {
         options.push("-o".into());
         options.push(format!("HostName={}", route.host));
     }
@@ -156,10 +157,11 @@ pub fn prepare_control_socket_directory() {
 }
 
 pub fn ssh_target(place: &Place) -> String {
+    let endpoint = place.endpoint_host();
     if place.user.is_empty() {
-        place.host.clone()
+        endpoint
     } else {
-        format!("{}@{}", place.user, place.host)
+        format!("{}@{}", place.user, endpoint)
     }
 }
 
@@ -379,7 +381,7 @@ mod tests {
 
     #[test]
     fn route_pins_the_node_host_key() {
-        let place = Place::new("ada", "whiterun", Backend::Herdr, None);
+        let place = Place::new("ada", "whiterun.example", Backend::Herdr, None);
         let route = Route {
             kind: crate::route::RouteKind::Direct,
             host: "100.64.0.7".into(),
@@ -401,7 +403,7 @@ mod tests {
         );
         assert_eq!(
             arguments.iter().rev().nth(1).map(String::as_str),
-            Some("ada@whiterun")
+            Some("ada@whiterun.example")
         );
     }
 

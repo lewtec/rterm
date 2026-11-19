@@ -140,13 +140,13 @@ pub fn merge(routes: &mut Vec<Route>, incoming: impl IntoIterator<Item = Route>)
 /// Every route rterm should try for a place, best first:
 ///
 /// 1. the route that worked last
-/// 2. routes saved in the catalog, in the order the user set
-/// 3. the place host itself (plain DNS or an IP)
-/// 4. `<short>.local` through mDNS
-/// 5. Tailscale peers that answer to the node name (MagicDNS name, then IPs)
+/// 2. routes saved in the catalog, in the order the user set (the endpoint is
+///    the first one)
+/// 3. `<short>.local` through mDNS, from the endpoint
+/// 4. Tailscale peers that answer to the endpoint name (MagicDNS name, then IPs)
 pub fn candidates(place: &Place) -> Vec<Route> {
     let mut out = Vec::new();
-    if place.is_local() || place.host.trim().is_empty() {
+    if place.is_local() || place.routes.is_empty() {
         return out;
     }
     for route in place.routes.iter().filter(|route| route.last) {
@@ -155,11 +155,11 @@ pub fn candidates(place: &Place) -> Vec<Route> {
     for route in &place.routes {
         push_unique(&mut out, route.clone());
     }
-    push_unique(&mut out, Route::direct(place.host.clone()));
-    if let Some(name) = mdns_name(&place.host) {
+    let endpoint = place.endpoint_host();
+    if let Some(name) = mdns_name(&endpoint) {
         push_unique(&mut out, Route::mdns(name));
     }
-    for route in tailscale_routes(place) {
+    for route in tailscale_routes(&endpoint) {
         push_unique(&mut out, route);
     }
     out.truncate(MAX_CANDIDATES);
@@ -205,8 +205,8 @@ fn trim_host(host: &str) -> String {
     host.trim().trim_end_matches('.').to_ascii_lowercase()
 }
 
-fn tailscale_routes(place: &Place) -> Vec<Route> {
-    let name = trim_host(&place.host);
+fn tailscale_routes(endpoint: &str) -> Vec<Route> {
+    let name = trim_host(endpoint);
     if name.is_empty() {
         return Vec::new();
     }
@@ -336,11 +336,15 @@ mod tests {
     #[test]
     fn candidates_keep_saved_order_first() {
         let mut place = place("riverwood");
-        place.routes = vec![Route::direct("100.64.0.7"), Route::mdns("riverwood.local")];
+        place.routes = vec![
+            Route::direct("riverwood"),
+            Route::direct("100.64.0.7"),
+            Route::mdns("riverwood.local"),
+        ];
         let routes = candidates(&place);
-        assert_eq!(routes[0], Route::direct("100.64.0.7"));
-        assert_eq!(routes[1], Route::mdns("riverwood.local"));
-        assert_eq!(routes[2], Route::direct("riverwood"));
+        assert_eq!(routes[0], Route::direct("riverwood"));
+        assert_eq!(routes[1], Route::direct("100.64.0.7"));
+        assert_eq!(routes[2], Route::mdns("riverwood.local"));
     }
 
     #[test]

@@ -10,15 +10,14 @@ use crate::route::Route;
 pub struct Place {
     pub id: Uuid,
     pub user: String,
-    /// The first endpoint the user typed: the tab label and the default
-    /// address. Not the node identity — `fingerprint` is. The address is used
-    /// verbatim and may itself contain `@` (ShellHub's `device@gateway`); the
-    /// login is only `user`.
-    pub host: String,
     pub backend: Backend,
     pub session: Option<String>,
     pub label: Option<String>,
-    /// More endpoints that reach the same node. `host` is tried as well.
+    /// Every way to reach the node. The first route is the endpoint the user
+    /// typed; the `last` flag marks the route in use. Empty means this machine.
+    /// Routes are the truth: there is no separate endpoint field. An address is
+    /// used verbatim and may itself contain `@` (ShellHub's `device@gateway`);
+    /// the login is only `user`.
     pub routes: Vec<Route>,
     /// Pinned SSH host key fingerprint (`SHA256:...`). This is the node
     /// identity. Empty means learn on the first successful attach.
@@ -32,20 +31,48 @@ impl Place {
         backend: Backend,
         session: Option<String>,
     ) -> Self {
+        let host = host.into();
+        let mut routes = Vec::new();
+        if !Self::is_local_host(&host) {
+            routes.push(Route::direct(host.trim()));
+        }
         Self {
             id: Uuid::new_v4(),
             user: user.into(),
-            host: host.into(),
             backend,
             session,
             label: None,
-            routes: Vec::new(),
+            routes,
             fingerprint: None,
         }
     }
 
+    /// A host that means this machine, not an SSH target.
+    pub fn is_local_host(host: &str) -> bool {
+        host.trim().is_empty() || Self::is_loopback_host(host) || is_this_machine(host)
+    }
+
     pub fn is_local(&self) -> bool {
-        Self::is_loopback_host(&self.host) || is_this_machine(&self.host)
+        self.routes.is_empty()
+    }
+
+    /// The endpoint the user typed: the first route.
+    pub fn endpoint(&self) -> Option<&Route> {
+        self.routes.first()
+    }
+
+    pub fn endpoint_host(&self) -> String {
+        self.endpoint()
+            .map(|route| route.host.trim().to_string())
+            .unwrap_or_default()
+    }
+
+    /// The route in use: the last one that worked, else the endpoint.
+    fn in_use_route(&self) -> Option<&Route> {
+        self.routes
+            .iter()
+            .find(|route| route.last)
+            .or_else(|| self.routes.first())
     }
 
     /// A pinned place has learned (or been given) the node's host key.
@@ -83,10 +110,12 @@ impl Place {
     }
 
     pub fn switch_key(&self) -> String {
+        let endpoint;
         let shown_host = if self.is_local() {
             "localhost"
         } else {
-            self.host.as_str()
+            endpoint = self.endpoint_host();
+            endpoint.as_str()
         };
         let login;
         let shown_user = if self.user.is_empty() && self.is_local() {
@@ -124,19 +153,9 @@ impl Place {
         if self.is_local() {
             return "localhost".to_string();
         }
-        let host = self
-            .routes
-            .iter()
-            .find(|route| route.last)
-            .or_else(|| {
-                self.routes
-                    .iter()
-                    .find(|route| !route.host.trim().is_empty())
-            })
-            .map(|route| route.host.trim())
-            .filter(|host| !host.is_empty())
-            .unwrap_or_else(|| self.host.trim());
-        host.trim().trim_end_matches('.').to_string()
+        self.in_use_route()
+            .map(|route| route.host.trim().trim_end_matches('.').to_string())
+            .unwrap_or_default()
     }
 
     pub fn display_label(&self) -> String {
@@ -154,10 +173,6 @@ impl Place {
     /// Every address that reaches this place, normalized.
     pub fn endpoint_hosts(&self) -> Vec<String> {
         let mut hosts = Vec::new();
-        let host = normalize_host(&self.host);
-        if !host.is_empty() {
-            hosts.push(host);
-        }
         for route in &self.routes {
             let host = normalize_host(&route.host);
             if !host.is_empty() && !hosts.contains(&host) {
@@ -224,20 +239,12 @@ impl Place {
         } else if resolved_host.is_empty() {
             return None;
         }
-        Some(Place {
-            id: Uuid::new_v4(),
-            user: resolved_user,
-            host: resolved_host,
-            backend,
-            session: if backend == Backend::Herdr {
-                None
-            } else {
-                session
-            },
-            label: None,
-            routes: Vec::new(),
-            fingerprint: None,
-        })
+        let session = if backend == Backend::Herdr {
+            None
+        } else {
+            session
+        };
+        Some(Self::new(resolved_user, resolved_host, backend, session))
     }
 }
 
@@ -414,6 +421,6 @@ mod tests {
         );
         let parsed = Place::parse_switch_key(&place.switch_key()).unwrap();
         assert_eq!(parsed.user, "lucasew");
-        assert_eq!(parsed.host, "lucao.whiterun@cloud.shellhub.io");
+        assert_eq!(parsed.endpoint_host(), "lucao.whiterun@cloud.shellhub.io");
     }
 }

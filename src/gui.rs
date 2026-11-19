@@ -1920,8 +1920,7 @@ fn user_hint(editor: &PlaceEditorState) -> &'static str {
 }
 
 fn is_remote(editor: &PlaceEditorState) -> bool {
-    let host = editor.host.trim();
-    !host.is_empty() && !Place::is_loopback_host(host)
+    !Place::is_local_host(editor.host.trim())
 }
 
 fn backend_name(backend: Backend) -> &'static str {
@@ -2035,7 +2034,7 @@ fn discovery_list(ui: &mut egui::Ui, found: &[Discovered]) {
 fn editor_draft(editor: &PlaceEditorState) -> Option<Place> {
     let host = editor.host.trim();
     let user = editor.user.trim();
-    if host.is_empty() || Place::is_loopback_host(host) {
+    if host.is_empty() || Place::is_local_host(host) {
         return None;
     }
     let backend = editor.backend;
@@ -2047,14 +2046,20 @@ fn editor_draft(editor: &PlaceEditorState) -> Option<Place> {
         Some(session.to_string())
     };
     let fingerprint = editor.fingerprint.trim();
+    // The endpoint is the first route, so discovery and probing see the same
+    // list the catalog will store.
+    let mut routes = Vec::new();
+    route::push_unique(&mut routes, Route::direct(host));
+    for route in editor.routes.clone() {
+        route::merge(&mut routes, [route]);
+    }
     Some(Place {
         id: Uuid::new_v4(),
         user: user.to_string(),
-        host: host.to_string(),
         backend,
         session,
         label: None,
-        routes: editor.routes.clone(),
+        routes,
         fingerprint: if fingerprint.is_empty() {
             None
         } else {
@@ -3011,7 +3016,7 @@ mod tests {
             fingerprint: String::new(),
         };
         let place = editor_draft(&editor).unwrap();
-        assert_eq!(place.host, "lucao.whiterun@cloud.shellhub.io");
+        assert_eq!(place.endpoint_host(), "lucao.whiterun@cloud.shellhub.io");
         assert_eq!(
             rterm::driver::ssh_target(&place),
             "lucasew@lucao.whiterun@cloud.shellhub.io"

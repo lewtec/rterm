@@ -114,6 +114,7 @@ mod tests {
     use crate::catalog::CatalogIo;
     use crate::codec::CatalogDocument;
     use crate::place::{self, Place};
+    use crate::route::Route;
     use std::path::PathBuf;
     use uuid::Uuid;
 
@@ -165,7 +166,7 @@ mod tests {
     fn parse_switch_key_covers_spec_form() {
         let herdr = Place::parse_switch_key("ada@remote.example").unwrap();
         assert_eq!(herdr.user, "ada");
-        assert_eq!(herdr.host, "remote.example");
+        assert_eq!(herdr.endpoint_host(), "remote.example");
         assert_eq!(herdr.backend, Backend::Herdr);
         assert!(herdr.session.is_none());
         assert_eq!(herdr.switch_key(), "ada@remote.example:herdr");
@@ -178,7 +179,7 @@ mod tests {
         assert_eq!(tmux.session.as_deref(), Some("foo"));
 
         let local = Place::parse_switch_key("ada@localhost:herdr").unwrap();
-        assert_eq!(local.host, "");
+        assert_eq!(local.endpoint_host(), "");
         assert_eq!(local.user, "ada");
         assert!(local.is_local());
 
@@ -186,7 +187,7 @@ mod tests {
         // A missing login means the ssh login, so the key is still valid.
         let no_user = Place::parse_switch_key("remote.example:herdr").unwrap();
         assert_eq!(no_user.user, "");
-        assert_eq!(no_user.host, "remote.example");
+        assert_eq!(no_user.endpoint_host(), "remote.example");
     }
 
     #[test]
@@ -194,11 +195,10 @@ mod tests {
         let place = Place {
             id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
             user: "ada".into(),
-            host: "remote.example".into(),
             backend: Backend::Herdr,
             session: None,
             label: None,
-            routes: Vec::new(),
+            routes: vec![Route::direct("remote.example")],
             fingerprint: None,
         };
         assert_eq!(

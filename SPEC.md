@@ -41,7 +41,6 @@ v1 runs on macOS 14 and on Linux. Windows is out of scope. A later release still
 A place is:
 
 - user (optional; empty means the ssh login)
-- host (the first endpoint; empty, a loopback name, or this machine's hostname means local; otherwise used verbatim, and it may contain `@`)
 - backend: `herdr`, `tmux`, or `screen`
 - session name: required for `tmux` and `screen`; absent for `herdr`
 - label: optional; replaces the hostname part of the tab name
@@ -50,9 +49,9 @@ A place is:
 
 herdr has no session name in rterm.
 
-An empty host, a loopback host (`localhost`, `127.0.0.1`, `::1`), or this machine's hostname is a local place. Attach runs the mux on this machine as the login user. Do not use SSH. Persist no host for a loopback name. Keep this machine's hostname in the catalog. If user is empty, use the login name. Default label is `user@localhost:herdr`.
+There is no separate endpoint or host field in the catalog. The routes are the whole truth: the first route is the endpoint the user typed, and an empty route list is a local place. While adding or editing, an empty endpoint, a loopback host (`localhost`, `127.0.0.1`, `::1`), or this machine's hostname means local; store no routes for it. A local place runs the mux on this machine as the login user and never uses SSH. If user is empty, use the login name. Default label is `user@localhost:herdr`.
 
-The routes are the source of truth for how to reach a node; the endpoint is only the first route. If the user leaves the label empty, the hostname is the route in use (the last one that worked, else the first saved route, else the endpoint), and the default name is:
+If the user leaves the label empty, the hostname is the host of the route in use (the route marked last, else the first route), and the default name is:
 
 - remote herdr: `user@hostname:herdr`
 - remote tmux or screen: `user@hostname:tmux(foo)` or `user@hostname:screen(foo)`
@@ -65,9 +64,9 @@ Parse form: `user@host` or `user@host:backend(args)`. A missing `:backend` means
 
 The user and the endpoint are separate fields. Never move an `@` from the endpoint into the user: `lucao.whiterun@cloud.shellhub.io` is a whole address, and with user `lucasew` rterm runs `ssh lucasew@lucao.whiterun@cloud.shellhub.io` (`ssh` itself splits at the last `@`).
 
-Two places may share a host. The stable identity of a place is a generated `id` in the catalog. The label is not the id. The key of a tab is the login, the fingerprint and the access: places with the same login and fingerprint are tabs of one node and differ by backend and session. Another login on the same machine is another tab.
+Two places may share a route. The stable identity of a place is a generated `id` in the catalog. The label is not the id. The key of a tab is the login, the fingerprint and the access: places with the same login and fingerprint are tabs of one node and differ by backend and session. Another login on the same machine is another tab.
 
-A tab opens one access to one node. The node's SSH identity is the pinned host key fingerprint, not a hostname. `host` is the name the user knows; `routes` are the ways to reach it, and they belong to the node, so every tab of it keeps the same list. One place may keep several routes and use any of them.
+A tab opens one access to one node. The node's SSH identity is the pinned host key fingerprint, not a hostname. `routes[0].host` is the endpoint the user typed; the route list holds every way to reach the node, and it belongs to the node, so every tab of it keeps the same list. One place may keep several routes and use any of them.
 
 ## Routes
 
@@ -75,11 +74,11 @@ A route is `kind`, `host`, and an optional `port`.
 
 | kind | source |
 | --- | --- |
-| `direct` | a saved name or IP, or the place host |
+| `direct` | a saved name or IP; `routes[0]` is the typed endpoint |
 | `mdns` | `<short>.local` through the system mDNS resolver |
 | `tailscale` | a MagicDNS name or IP from `tailscale status --json` |
 
-Try routes in this order, dropping duplicates: the route marked last, routes saved in the catalog (the endpoint is one of them), then mDNS and Tailscale peers discovered from the hostname. Ask the Tailscale daemon through the `tailscale` binary. A missing binary or stopped daemon only removes Tailscale routes.
+Try routes in this order, dropping duplicates: the route marked last, routes saved in the catalog (the endpoint is one of them), then mDNS and Tailscale peers discovered from the endpoint host. Ask the Tailscale daemon through the `tailscale` binary. A missing binary or stopped daemon only removes Tailscale routes.
 
 The connection assistant probes each route before attaching:
 
@@ -88,7 +87,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=2 -o ConnectionAttempts=1 \
     -o PreferredAuthentications=none -o StrictHostKeyChecking=accept-new \
     -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=<temp> \
     -o HostKeyAlias=rterm-<place-id> -o HostName=<route-host> [-p <port>] \
-    <user>@<place-host> true
+    <user>@<endpoint> true
 ```
 
 Host key exchange happens before authentication, so a route that presents a host key is reachable even when the server refuses the `none` method. A password or OTP still belongs to the pane.
@@ -150,7 +149,7 @@ When the place names a host and the backend is `tmux` or `screen`, use SSH. Call
 Force a remote TTY (`ssh -t`). Run the driver command inside a login shell so the remote `PATH` is the user's login `PATH`:
 
 ```text
-ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=auto -o ControlPath=<caches>/cm-<place-id> -o ControlPersist=no -o HostKeyAlias=rterm-<place-id> -o UserKnownHostsFile=<caches>/hostkeys-<place-id> -o StrictHostKeyChecking=yes -o HostName=<route-host> [-p <port>] user@<place-host> -- exec "$SHELL" -lc '<driver-command>'
+ssh -t -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o ControlMaster=auto -o ControlPath=<caches>/cm-<place-id> -o ControlPersist=no -o HostKeyAlias=rterm-<place-id> -o UserKnownHostsFile=<caches>/hostkeys-<place-id> -o StrictHostKeyChecking=yes -o HostName=<route-host> [-p <port>] user@<endpoint> -- exec "$SHELL" -lc '<driver-command>'
 ```
 
 `$SHELL` is the user's shell (local or remote as SSH resolves it). Do not hard-code bash or zsh.
@@ -205,7 +204,7 @@ While write or upload runs, show a corner overlay on the pane. Show a spinner, W
 Remote upload uses a second `/usr/bin/ssh` on the attach ControlPath:
 
 ```text
-ssh -o BatchMode=yes -o ControlPath=<caches>/cm-<place-id> -o HostKeyAlias=rterm-<place-id> -o UserKnownHostsFile=<caches>/hostkeys-<place-id> -o StrictHostKeyChecking=yes -o HostName=<route-host> [-p <port>] user@<place-host> -- cat > '/tmp/rterm-paste-<id>.png'
+ssh -o BatchMode=yes -o ControlPath=<caches>/cm-<place-id> -o HostKeyAlias=rterm-<place-id> -o UserKnownHostsFile=<caches>/hostkeys-<place-id> -o StrictHostKeyChecking=yes -o HostName=<route-host> [-p <port>] user@<endpoint> -- cat > '/tmp/rterm-paste-<id>.png'
 ```
 
 Do not open a TTY. Do not install a remote helper. Do not write into the place working directory. Leave the file in `/tmp`.
@@ -224,17 +223,21 @@ If a file in that directory changes on disk, reload.
 
 On first launch, read `~/Library/Application Support/rterm/places.toml` into the same in-memory model. Do not rewrite or delete that file until the user approves a migration.
 
-Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`, optional `fingerprint`, and zero or more `[[place.route]]` records. A route has `kind`, `host`, optional `port`, and optional `last` (the route that worked most recently).
+Each place record has: `id`, `user`, `backend`, optional `session`, optional `label`, optional `fingerprint`, and zero or more `[[place.route]]` records. There is no `host` field: the first route is the endpoint the user typed. A route has `kind`, `host`, optional `port`, and optional `last` (the route that worked most recently).
 
 ```toml
-version = 2
+version = 3
 
 [[place]]
 id = "0192F3C1-7A4E-7C3A-9B2D-1F0A2B3C4D5E"
 user = "ada"
-host = "whiterun"
 backend = "herdr"
 fingerprint = "SHA256:C8olMcLxERkizT4dlzO1z85UVxdq/COQVR0T3I9IEK8"
+
+[[place.route]]
+kind = "direct"
+host = "whiterun"
+last = true
 
 [[place.route]]
 kind = "mdns"
@@ -243,10 +246,9 @@ host = "whiterun.local"
 [[place.route]]
 kind = "tailscale"
 host = "whiterun.tailnet.ts.net"
-last = true
 ```
 
-Version 1 files have no routes or fingerprint. They decode with no routes and no pin; `host` is still tried as the direct route. Such a place adopts the fingerprint once a verified endpoint reaches it, so it never has to be added twice. Write version 2 on the next save.
+Version 1 files have no routes or fingerprint and a `host`. Version 2 files keep a `host` next to the route list. Both decode with the legacy `host` as the first direct route, so an old endpoint is never lost; v1 places have no pin until a verified endpoint reaches them. Write version 3 on the next save, and do not write the legacy host back.
 
 Do not use `~/.config`. Do not use `UserDefaults` as the store.
 
