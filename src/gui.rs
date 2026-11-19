@@ -67,22 +67,6 @@ enum WizardMsg {
     Done,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum AddStep {
-    /// Establish the node identity: probe the host and pin its SSH host key.
-    Fingerprint,
-    /// Set the ways to reach that same fingerprint.
-    Routes,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum AddAction {
-    Check,
-    Probe,
-    BackFingerprint,
-    Save,
-}
-
 pub struct RtermApp {
     store: AppStore,
     sessions: HashMap<Uuid, Session>,
@@ -92,7 +76,6 @@ pub struct RtermApp {
     wizard: Option<WizardRun>,
     fingerprint_check: Option<Receiver<Result<Choice, ChooseError>>>,
     fingerprint_error: Option<String>,
-    add_step: AddStep,
     sleep: SleepWatch,
     fill: bool,
     windowed_size: Option<egui::Vec2>,
@@ -128,7 +111,6 @@ impl RtermApp {
             wizard: None,
             fingerprint_check: None,
             fingerprint_error: None,
-            add_step: AddStep::Fingerprint,
             sleep: SleepWatch::start(),
             fill: false,
             windowed_size: None,
@@ -572,6 +554,7 @@ impl eframe::App for RtermApp {
         self.ensure_font(ctx);
         self.sync_sessions();
         if self.paste.rx.is_some()
+            || self.fingerprint_check.is_some()
             || !self.pending_routes.is_empty()
             || self.wizard.as_ref().is_some_and(|run| !run.done)
         {
@@ -1089,7 +1072,6 @@ impl RtermApp {
         self.wizard = None;
         self.fingerprint_check = None;
         self.fingerprint_error = None;
-        self.add_step = AddStep::Fingerprint;
         self.store.begin_add();
     }
 
@@ -1125,24 +1107,34 @@ impl RtermApp {
             }
             Ok(Ok(choice)) => {
                 self.fingerprint_check = None;
-                let fallback = self
-                    .store
-                    .editor
-                    .as_ref()
-                    .map(|editor| editor.fingerprint.trim().to_string())
-                    .unwrap_or_default();
-                let fingerprint = choice.learned.clone().unwrap_or(fallback);
-                if fingerprint.is_empty() {
+                let Some(editor) = self.store.editor.clone() else {
+                    return;
+                };
+                let Some(fingerprint) = choice.learned.clone().filter(|value| !value.is_empty())
+                else {
                     self.fingerprint_error = Some("no host key".into());
                     return;
+                };
+                let id = self.store.add_endpoint(
+                    editor.user.trim(),
+                    editor.host.trim(),
+                    fingerprint,
+                    choice.route.clone(),
+                );
+                self.store.editor = None;
+                // The attach keys known_hosts by place id, so install after the
+                // node is known: the route may have folded into an existing place.
+                if let Some(place) = self
+                    .store
+                    .places
+                    .iter()
+                    .find(|place| place.id == id)
+                    .cloned()
+                    && let Err(err) = probe::install_known_hosts(&place, &choice)
+                {
+                    self.store
+                        .fail_attach(id, format!("could not store host key: {err}"), None);
                 }
-                if let Some(editor) = self.store.editor.as_mut() {
-                    editor.fingerprint = fingerprint;
-                    route::remember(&mut editor.routes, choice.route.clone());
-                }
-                self.add_step = AddStep::Routes;
-                self.wizard = None;
-                self.start_wizard();
             }
         }
     }
@@ -1314,7 +1306,7 @@ impl RtermApp {
             ui.label(egui::RichText::new(title).size(18.0));
             ui.label(egui::RichText::new("Where this tab connects.").weak());
             ui.add_space(8.0);
-            identity_fields(ui, &mut editor, true, true);
+            identity_fields(ui, &mut editor);
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(backend_hint(editor.backend))
@@ -1409,233 +1401,88 @@ impl RtermApp {
         let Some(mut editor) = self.store.editor.clone() else {
             return;
         };
-        let step = self.add_step;
         let mut open = true;
         let mut dismiss = false;
-        let mut next: Option<AddAction> = None;
-        let directory = self.store.places_directory().display().to_string();
+        let mut submit = false;
         let checking = self.fingerprint_check.is_some();
-        let discovering = self.wizard.as_ref().is_some_and(|run| !run.done);
-        let found = self
-            .wizard
-            .as_ref()
-            .map(|run| run.results.clone())
-            .unwrap_or_default();
         sheet(ctx, "place-editor", &mut open, |ui| {
-            ui.set_min_width(460.0);
+            ui.set_min_width(380.0);
             ui.label(egui::RichText::new("Add Place").size(18.0));
-            ui.label(egui::RichText::new("One node, one fingerprint.").weak());
-            ui.add_space(6.0);
-            wizard_steps(ui, step);
+            ui.label(
+                egui::RichText::new(
+                    "Who logs in, and where. rterm reads the SSH host key and files this host under the node that owns it.",
+                )
+                .weak(),
+            );
             ui.add_space(8.0);
-            match step {
-                AddStep::Fingerprint => {
-                    let remote =
-                        !Place::is_loopback_host(&editor.host) && !editor.host.trim().is_empty();
-                    ui.add_enabled_ui(!checking, |ui| {
-                        identity_fields(ui, &mut editor, false, false);
+            ui.add_enabled_ui(!checking, |ui| {
+                egui::Grid::new("add-fields")
+                    .num_columns(2)
+                    .spacing(egui::vec2(12.0, 8.0))
+                    .show(ui, |ui| {
+                        let hint = user_hint(&editor);
+                        place_field(ui, "User", &mut editor.user, hint);
+                        place_field(ui, "Host", &mut editor.host, "empty is this machine");
                     });
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new(backend_hint(editor.backend))
-                            .small()
-                            .weak(),
-                    );
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(6.0);
-                    if remote {
-                        ui.label(
-                            egui::RichText::new(if checking {
-                                "Checking the SSH host key…"
-                            } else {
-                                "rterm connects once to read the SSH host key. That fingerprint becomes this node's identity."
-                            })
-                            .small()
-                            .weak(),
-                        );
-                        if !editor.fingerprint.trim().is_empty() {
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("Fingerprint").small().weak());
-                                ui.monospace(short_fingerprint(&editor.fingerprint));
-                            });
-                        }
-                    } else {
-                        ui.label(
-                            egui::RichText::new("This machine needs no fingerprint or route.")
-                                .small()
-                                .weak(),
-                        );
-                    }
-                    if let Some(error) = self.fingerprint_error.as_deref() {
-                        ui.add_space(6.0);
-                        ui.label(
-                            egui::RichText::new(error)
-                                .small()
-                                .color(egui::Color32::from_rgb(255, 180, 60)),
-                        );
-                    }
-                    if let Some(issue) = details_issue(&editor) {
-                        ui.add_space(6.0);
-                        ui.label(
-                            egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
-                        );
-                    }
-                    ui.add_space(8.0);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let label = if checking {
-                            "Checking…"
-                        } else if remote {
-                            "Find fingerprint"
-                        } else {
-                            "Save"
-                        };
-                        let action = if remote {
-                            AddAction::Check
-                        } else {
-                            AddAction::Save
-                        };
-                        if ui
-                            .add_enabled(
-                                !checking && details_issue(&editor).is_none(),
-                                egui::Button::new(label).fill(ACCENT),
-                            )
-                            .clicked()
-                        {
-                            next = Some(action);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            dismiss = true;
-                        }
-                    });
-                }
-                AddStep::Routes => {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Fingerprint").small().weak());
-                        ui.monospace(short_fingerprint(&editor.fingerprint));
-                    });
-                    ui.label(
-                        egui::RichText::new(
-                            "Every route must answer with this key. rterm tries the last one that worked.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    ui.add_space(8.0);
-                    egui::Grid::new("route-user")
-                        .num_columns(2)
-                        .spacing(egui::vec2(12.0, 8.0))
-                        .show(ui, |ui| {
-                            let hint = user_hint(&editor);
-                            place_field(ui, "User", &mut editor.user, hint);
-                        });
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if discovering {
-                            ui.spinner();
-                        }
-                        ui.label(
-                            egui::RichText::new(if discovering {
-                                "Finding routes…"
-                            } else if found.is_empty() {
-                                "No route checked yet."
-                            } else {
-                                "Routes checked."
-                            })
-                            .strong(),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .add_enabled(
-                                    !discovering && editor_draft(&editor).is_some(),
-                                    egui::Button::new("Find routes"),
-                                )
-                                .clicked()
-                            {
-                                next = Some(AddAction::Probe);
-                            }
-                        });
-                    });
-                    ui.add_space(6.0);
-                    if !found.is_empty() {
-                        discovery_list(ui, &found);
-                        ui.add_space(6.0);
-                    }
-                    routes_list(ui, &mut editor.routes);
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new(
-                            "Saved order, last route first. Empty means discover direct, mDNS and Tailscale.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    ui.add_space(8.0);
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(directory).small().weak())
-                            .selectable(true),
-                    );
-                    ui.add_space(8.0);
-                    if let Some(issue) = save_issue(&editor) {
-                        ui.label(
-                            egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)),
-                        );
-                        ui.add_space(6.0);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add_enabled(can_save(&editor), egui::Button::new("Save").fill(ACCENT))
-                            .clicked()
-                        {
-                            next = Some(AddAction::Save);
-                        }
-                        if ui.button("Back").clicked() {
-                            next = Some(AddAction::BackFingerprint);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            dismiss = true;
-                        }
-                    });
-                }
+            });
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(if is_remote(&editor) {
+                    "A host that answers with a fingerprint already in the catalog becomes another way in, not a new tab."
+                } else {
+                    "This machine needs no host key or route."
+                })
+                .small()
+                .weak(),
+            );
+            if let Some(error) = self.fingerprint_error.as_deref() {
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new(error).color(egui::Color32::from_rgb(255, 180, 60)));
             }
+            if let Some(issue) = save_issue(&editor) {
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new(issue).color(egui::Color32::from_rgb(255, 180, 60)));
+            }
+            ui.add_space(8.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let label = if checking { "Checking…" } else { "Add" };
+                if ui
+                    .add_enabled(
+                        !checking && save_issue(&editor).is_none(),
+                        egui::Button::new(label).fill(ACCENT),
+                    )
+                    .clicked()
+                {
+                    submit = true;
+                }
+                if checking {
+                    ui.spinner();
+                }
+                if ui.button("Cancel").clicked() {
+                    dismiss = true;
+                }
+            });
         });
         if dismiss {
             open = false;
         }
-        match next {
-            Some(AddAction::Check) => {
+        if submit {
+            let remote = is_remote(&editor);
+            let user = editor.user.clone();
+            if remote {
                 self.store.editor = Some(editor);
                 self.start_fingerprint_check();
+            } else {
+                self.store.editor = None;
+                self.store.add_local_place(user);
             }
-            Some(AddAction::Probe) => {
-                self.store.editor = Some(editor);
-                self.wizard = None;
-                self.start_wizard();
-            }
-            Some(AddAction::BackFingerprint) => {
-                editor.fingerprint.clear();
-                editor.routes.clear();
-                self.fingerprint_error = None;
-                self.wizard = None;
-                self.add_step = AddStep::Fingerprint;
-                self.store.editor = Some(editor);
-            }
-            Some(AddAction::Save) => {
-                self.wizard = None;
-                self.fingerprint_check = None;
-                self.fingerprint_error = None;
-                self.store.editor = Some(editor);
-                self.store.save_editor();
-                return;
-            }
-            None => self.store.editor = Some(editor),
+            return;
         }
-        if !open {
-            self.wizard = None;
+        if open {
+            self.store.editor = Some(editor);
+        } else {
             self.fingerprint_check = None;
             self.fingerprint_error = None;
-            self.add_step = AddStep::Fingerprint;
             self.store.editor = None;
         }
     }
@@ -1848,6 +1695,11 @@ fn user_hint(editor: &PlaceEditorState) -> &'static str {
     }
 }
 
+fn is_remote(editor: &PlaceEditorState) -> bool {
+    let host = editor.host.trim();
+    !host.is_empty() && !Place::is_loopback_host(host)
+}
+
 fn backend_name(backend: Backend) -> &'static str {
     match backend {
         Backend::Herdr => "Herdr",
@@ -1864,40 +1716,13 @@ fn backend_hint(backend: Backend) -> &'static str {
     }
 }
 
-fn wizard_steps(ui: &mut egui::Ui, step: AddStep) {
-    let steps = [
-        ("1 Fingerprint", AddStep::Fingerprint),
-        ("2 Routes", AddStep::Routes),
-    ];
-    ui.horizontal(|ui| {
-        for (index, (label, value)) in steps.into_iter().enumerate() {
-            if index > 0 {
-                ui.label(egui::RichText::new("›").weak());
-            }
-            let color = if value == step {
-                ACCENT
-            } else {
-                egui::Color32::GRAY
-            };
-            ui.label(egui::RichText::new(label).color(color).strong());
-        }
-    });
-}
-
-fn identity_fields(
-    ui: &mut egui::Ui,
-    editor: &mut PlaceEditorState,
-    user: bool,
-    fingerprint: bool,
-) {
+fn identity_fields(ui: &mut egui::Ui, editor: &mut PlaceEditorState) {
     egui::Grid::new("place-fields")
         .num_columns(2)
         .spacing(egui::vec2(12.0, 8.0))
         .show(ui, |ui| {
-            if user {
-                let hint = user_hint(editor);
-                place_field(ui, "User", &mut editor.user, hint);
-            }
+            let hint = user_hint(editor);
+            place_field(ui, "User", &mut editor.user, hint);
             place_field(ui, "Host", &mut editor.host, "empty is this machine");
             ui.label("Backend");
             ui.horizontal(|ui| {
@@ -1910,18 +1735,16 @@ fn identity_fields(
                 place_field(ui, "Session", &mut editor.session, "session name");
             }
             place_field(ui, "Label", &mut editor.label, "optional, shown on the tab");
-            if fingerprint {
-                ui.label("Fingerprint");
-                ui.add(
-                    egui::TextEdit::singleline(&mut editor.fingerprint)
-                        .hint_text("SHA256:… learned on first connect")
-                        .desired_width(320.0)
-                        .font(egui::TextStyle::Monospace)
-                        .id(egui::Id::new("place-fingerprint")),
-                )
-                .on_hover_text("SSH host key pinned to this node. Leave empty to learn.");
-                ui.end_row();
-            }
+            ui.label("Fingerprint");
+            ui.add(
+                egui::TextEdit::singleline(&mut editor.fingerprint)
+                    .hint_text("SHA256:… learned on first connect")
+                    .desired_width(320.0)
+                    .font(egui::TextStyle::Monospace)
+                    .id(egui::Id::new("place-fingerprint")),
+            )
+            .on_hover_text("SSH host key pinned to this node. Leave empty to learn.");
+            ui.end_row();
         });
 }
 

@@ -95,7 +95,11 @@ A place remembers the route that worked last (`last = true` on its route). The a
 
 Keep the probe output as `<caches>/hostkeys-<place-id>`. The attach uses the same `HostKeyAlias`, `StrictHostKeyChecking=yes`, and `HostName=<route>`, so every route shares one known_hosts identity. Do not write the user's `known_hosts`.
 
-The Add sheet is two steps: **Fingerprint** (host, backend, session; rterm probes once and pins the SSH host key) and **Routes** (user, then every way to reach that same fingerprint). A route that presents another key is listed as a mismatch and never kept. Saving a node whose fingerprint already belongs to a place with the same backend and session merges the new routes into that place instead of adding a duplicate. **Find routes** is also available when editing.
+Add Place asks only for **user** and **host**. rterm probes the host once and reads its SSH host key. The fingerprint is the node identity: if a place already owns it, the host becomes another route on that place; otherwise rterm creates the place with that fingerprint and the route. No backend, session, label, route list, or fingerprint field in Add. The full form (including routes and **Find routes**) remains in Edit.
+
+A place that already has its pin is never asked to confirm it again. A route that presents another key is another node and is never attached.
+
+Places loaded from a v1 `places.toml` join the same in-memory model with no routes and no pin; `host` is still tried as the direct route. Loading does not rewrite or delete the v1 file. Migrating v1 on disk is pending an explicit decision.
 
 Discovery runs without attaching. It lists reachable routes with their fingerprint, keeps the routes that match the pin, and saves the pin.
 
@@ -210,7 +214,7 @@ A CRUD GUI in the app reads and writes these files. Add, edit, delete, and reord
 
 If a file in that directory changes on disk, reload.
 
-On first launch, migrate `~/Library/Application Support/rterm/places.toml` into that directory and delete the old file.
+On first launch, read `~/Library/Application Support/rterm/places.toml` into the same in-memory model. Do not rewrite or delete that file until the user approves a migration.
 
 Each place record has: `id`, `user`, `host`, `backend`, optional `session`, optional `label`, optional `fingerprint`, and zero or more `[[place.route]]` records. A route has `kind`, `host`, optional `port`, and optional `last` (the route that worked most recently).
 
