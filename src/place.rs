@@ -91,6 +91,28 @@ impl Place {
         self.switch_key()
     }
 
+    /// Every address that reaches this place, normalized.
+    pub fn endpoint_hosts(&self) -> Vec<String> {
+        let mut hosts = Vec::new();
+        let host = normalize_host(&self.host);
+        if !host.is_empty() {
+            hosts.push(host);
+        }
+        for route in &self.routes {
+            let host = normalize_host(&route.host);
+            if !host.is_empty() && !hosts.contains(&host) {
+                hosts.push(host);
+            }
+        }
+        hosts
+    }
+
+    /// True when `address` is one of the ways to reach this place.
+    pub fn points_at(&self, address: &str) -> bool {
+        let address = normalize_host(address);
+        !address.is_empty() && self.endpoint_hosts().iter().any(|host| host == &address)
+    }
+
     pub fn matches_switch_key(&self, key: &str) -> bool {
         let needle = key.trim();
         if needle.is_empty() {
