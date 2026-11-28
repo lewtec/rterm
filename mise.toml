@@ -1,7 +1,7 @@
 # Rust toolchain via mise. Linux builds use the conda gcc/binutils
 # prefixes because the host `cc` shim is not a compiler rustc can run.
 [tools]
-rust = { version = "1.93.0", components = ["rustfmt", "clippy"] }
+rust = { version = "1.100.1", components = ["rustfmt", "clippy"] }
 # Go is only for packaging/dmg: the pure-Go HFS+ and .DS_Store writer that
 # builds the installer DMG on any host.
 go = "1.27.4"
